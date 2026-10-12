@@ -1,0 +1,39 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null && request.auth.uid != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // Профили пользователей
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(userId);
+
+      // Личные цитаты пользователя
+      match /quotes/{quoteId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+
+    // Облачные сюрпризы между читателями
+    match /surprises/{surpriseId} {
+      allow read: if isSignedIn() && 
+        (resource.data.receiverId == request.auth.uid || resource.data.senderId == request.auth.uid);
+
+      allow create: if isSignedIn() && 
+        request.resource.data.senderId == request.auth.uid;
+
+      allow update: if isSignedIn() && 
+        (resource.data.receiverId == request.auth.uid || resource.data.senderId == request.auth.uid);
+
+      allow delete: if isSignedIn() && 
+        resource.data.senderId == request.auth.uid;
+    }
+  }
+}

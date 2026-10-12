@@ -1,0 +1,63 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User profile in LivingPage literary community",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "displayName": { "type": "string" },
+        "statusText": { "type": "string" },
+        "photoUrl": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "displayName", "createdAt"]
+    },
+    "CloudQuote": {
+      "title": "CloudQuote",
+      "description": "Saved and generated literary quote in cloud",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "quoteText": { "type": "string" },
+        "author": { "type": "string" },
+        "bookTitle": { "type": "string" },
+        "videoDuration": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "quoteText", "author", "createdAt"]
+    },
+    "CloudSurprise": {
+      "title": "CloudSurprise",
+      "description": "Literary surprise gift sent between readers",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "receiverId": { "type": "string" },
+        "receiverName": { "type": "string" },
+        "quoteText": { "type": "string" },
+        "author": { "type": "string" },
+        "bookTitle": { "type": "string" },
+        "formatType": { "type": "string" },
+        "durationSeconds": { "type": "integer" },
+        "isOpened": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "senderId", "senderName", "receiverId", "quoteText", "formatType", "createdAt"]
+    }
+  },
+  "firestore": {
+    "users": {
+      "schema": "UserProfile",
+      "description": "User profiles in literary community"
+    },
+    "surprises": {
+      "schema": "CloudSurprise",
+      "description": "Real-time surprises sent between readers"
+    }
+  }
+}
