@@ -77,7 +77,6 @@ class MainViewModel(
         _userMessage.value = "Вы вышли из профиля"
     }
 
-    // Суточный лимит и учет через DataStore сервис
     val dailyUsage: StateFlow<DailyUsage> = repository.dailyUsage
         .stateIn(
             viewModelScope,
@@ -159,9 +158,6 @@ class MainViewModel(
         }
     }
 
-    /**
-     * Попытка генерации видео: блокируется, если суточный лимит 5/день исчерпан
-     */
     fun generateNewQuote() {
         viewModelScope.launch {
             val canGenerate = repository.canGenerateVideo()
@@ -213,9 +209,16 @@ class MainViewModel(
     }
 
     /**
-     * НОВАЯ ФУНКЦИЯ: Загрузка книги из PDF-файла
+     * Загрузка книги из PDF с указанием названия, автора и обложки.
+     * Если пользователь не ввёл название/автора — используются значения по умолчанию.
      */
-    fun loadBookFromPdf(context: Context, uri: Uri) {
+    fun loadBookFromPdf(
+        context: Context,
+        uri: Uri,
+        title: String = "",
+        author: String = "",
+        coverUri: String = ""
+    ) {
         viewModelScope.launch {
             _isAiThinking.value = true
             _userMessage.value = "Читаем PDF-файл..."
@@ -225,13 +228,16 @@ class MainViewModel(
 
             result.onSuccess { text ->
                 val newBook = BookEntity(
-                    title = "Загруженная книга",
-                    author = "Неизвестный автор",
+                    title = title.ifBlank { "Загруженная книга" },
+                    author = author.ifBlank { "Неизвестный автор" },
                     coverRes = R.drawable.book_cover_alchemist,
                     totalChapters = 1,
                     currentChapter = 1,
                     progressPercent = 0,
-                    generatedQuotesCount = 0
+                    generatedQuotesCount = 0,
+                    textContent = text,
+                    isCurrent = true,
+                    coverUri = coverUri
                 )
                 repository.addBook(newBook)
                 _userMessage.value = "Книга успешно загружена! Текст готов к чтению."

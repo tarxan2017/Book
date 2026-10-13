@@ -56,7 +56,13 @@ class LivingPageRepository(
     val currentBook: Flow<BookEntity?> = dao.getCurrentBook()
 
     suspend fun updateBook(book: BookEntity) = dao.updateBook(book)
-    suspend fun addBook(book: BookEntity) = dao.insertBook(book)
+
+    // ИСПРАВЛЕНО: перед добавлением новой книги сбрасываем isCurrent у всех остальных,
+    // чтобы новая книга стала текущей.
+    suspend fun addBook(book: BookEntity) {
+        dao.clearCurrentBook()
+        dao.insertBook(book)
+    }
 
     // Цитаты (Room + Cloud Sync)
     val allQuotes: Flow<List<QuoteEntity>> = dao.getAllQuotes()

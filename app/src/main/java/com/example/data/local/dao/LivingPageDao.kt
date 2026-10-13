@@ -30,6 +30,10 @@ interface LivingPageDao {
     @Update
     suspend fun updateBook(book: BookEntity)
 
+    // Сбрасываем флаг isCurrent у всех книг (перед добавлением новой)
+    @Query("UPDATE books SET isCurrent = 0")
+    suspend fun clearCurrentBook()
+
     // Цитаты
     @Query("SELECT * FROM quotes ORDER BY isToday DESC, timestamp DESC")
     fun getAllQuotes(): Flow<List<QuoteEntity>>

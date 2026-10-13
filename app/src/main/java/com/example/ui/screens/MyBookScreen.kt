@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -33,10 +34,15 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,7 +54,9 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
 import com.example.R
 import com.example.ui.theme.PlayfairDisplayFontFamily
 import com.example.ui.viewmodel.MainViewModel
@@ -64,11 +72,32 @@ fun MyBookScreen(
 
     val context = LocalContext.current
 
+    // Состояние диалога настройки книги
+    var showDialog by remember { mutableStateOf(false) }
+    var pendingPdfUri by remember { mutableStateOf<Uri?>(null) }
+    var tempTitle by remember { mutableStateOf("") }
+    var tempAuthor by remember { mutableStateOf("") }
+    var tempCoverUri by remember { mutableStateOf("") }
+
+    // Лаунчер для выбора PDF
     val pdfPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            viewModel.loadBookFromPdf(context, uri)
+            pendingPdfUri = uri
+            tempTitle = ""
+            tempAuthor = ""
+            tempCoverUri = ""
+            showDialog = true
+        }
+    }
+
+    // Лаунчер для выбора обложки (картинки)
+    val coverPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            tempCoverUri = uri.toString()
         }
     }
 
@@ -121,8 +150,9 @@ fun MyBookScreen(
                 color = MaterialTheme.colorScheme.onBackground
             )
 
+            // Верхний плюсик — теперь открывает выбор PDF
             IconButton(
-                onClick = { },
+                onClick = { pdfPickerLauncher.launch(arrayOf("application/pdf")) },
                 modifier = Modifier.testTag("my_book_add_button")
             ) {
                 Icon(
@@ -135,6 +165,7 @@ fun MyBookScreen(
 
         Spacer(modifier = Modifier.height(18.dp))
 
+        // Карточка книги
         Surface(
             shape = RoundedCornerShape(20.dp),
             color = MaterialTheme.colorScheme.surface,
@@ -151,12 +182,22 @@ fun MyBookScreen(
                         .clip(RoundedCornerShape(10.dp))
                         .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
                 ) {
-                    Image(
-                        painter = painterResource(id = book.coverRes),
-                        contentDescription = book.title,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
+                    // Если есть пользовательская обложка — показываем её, иначе стандартную
+                    if (book.coverUri.isNotBlank()) {
+                        AsyncImage(
+                            model = book.coverUri,
+                            contentDescription = book.title,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    } else {
+                        Image(
+                            painter = painterResource(id = book.coverRes),
+                            contentDescription = book.title,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.width(16.dp))
@@ -215,6 +256,7 @@ fun MyBookScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        // Прогресс чтения
         Surface(
             shape = RoundedCornerShape(20.dp),
             color = MaterialTheme.colorScheme.surface,
@@ -341,6 +383,7 @@ fun MyBookScreen(
 
         Spacer(modifier = Modifier.height(14.dp))
 
+        // Лимит генераций
         Surface(
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surface,
@@ -387,6 +430,7 @@ fun MyBookScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        // Кнопка загрузки книги (нижняя)
         Surface(
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
@@ -426,5 +470,135 @@ fun MyBookScreen(
         }
 
         Spacer(modifier = Modifier.height(24.dp))
+    }
+
+    // Диалог настройки книги
+    if (showDialog && pendingPdfUri != null) {
+        Dialog(onDismissRequest = { showDialog = false }) {
+            Surface(
+                shape = RoundedCornerShape(24.dp),
+                color = MaterialTheme.colorScheme.surface,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(8.dp)
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text(
+                        text = "Настройка книги",
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontFamily = PlayfairDisplayFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 20.sp
+                        ),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    OutlinedTextField(
+                        value = tempTitle,
+                        onValueChange = { tempTitle = it },
+                        label = { Text("Название") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    OutlinedTextField(
+                        value = tempAuthor,
+                        onValueChange = { tempAuthor = it },
+                        label = { Text("Автор") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    // Выбор обложки
+                    Text(
+                        text = "Обложка",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(width = 60.dp, height = 84.dp)
+                                .clip(RoundedCornerShape(8.dp))
+                                .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                        ) {
+                            if (tempCoverUri.isNotBlank()) {
+                                AsyncImage(
+                                    model = tempCoverUri,
+                                    contentDescription = "Обложка",
+                                    contentScale = ContentScale.Crop,
+                                    modifier = Modifier.fillMaxSize()
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.Default.Add,
+                                    contentDescription = "Выбрать обложку",
+                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.align(Alignment.Center).size(24.dp)
+                                )
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.width(16.dp))
+
+                        TextButton(
+                            onClick = { coverPickerLauncher.launch("image/*") }
+                        ) {
+                            Text(
+                                text = "Выбрать обложку",
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(onClick = { showDialog = false }) {
+                            Text(
+                                text = "Отмена",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+
+                        Spacer(modifier = Modifier.width(8.dp))
+
+                        Button(
+                            onClick = {
+                                viewModel.loadBookFromPdf(
+                                    context = context,
+                                    uri = pendingPdfUri!!,
+                                    title = tempTitle,
+                                    author = tempAuthor,
+                                    coverUri = tempCoverUri
+                                )
+                                showDialog = false
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = MaterialTheme.colorScheme.onPrimary
+                            ),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Сохранить")
+                        }
+                    }
+                }
+            }
+        }
     }
 }

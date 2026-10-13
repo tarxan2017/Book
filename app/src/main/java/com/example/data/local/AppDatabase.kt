@@ -22,7 +22,7 @@ import kotlinx.coroutines.launch
         FriendEntity::class,
         SurpriseEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -41,6 +41,7 @@ abstract class AppDatabase : RoomDatabase() {
                     "living_page_database"
                 )
                     .addCallback(DatabaseCallback())
+                    .fallbackToDestructiveMigration()
                     .build()
                 INSTANCE = instance
                 instance
@@ -59,7 +60,6 @@ abstract class AppDatabase : RoomDatabase() {
         }
 
         private suspend fun populateInitialData(dao: LivingPageDao) {
-            // Начальная книга из дизайна
             val sampleAlchemistText = """
 Глава 12. Пустыня и Знаки
 
@@ -102,7 +102,6 @@ abstract class AppDatabase : RoomDatabase() {
 
             dao.insertBooks(listOf(alchemistBook, littlePrinceBook))
 
-            // Цитаты дня и прошлые цитаты из макета
             val quotes = listOf(
                 QuoteEntity(
                     id = 1,
@@ -162,7 +161,6 @@ abstract class AppDatabase : RoomDatabase() {
             )
             dao.insertQuotes(quotes)
 
-            // Друзья из дизайна
             val friends = listOf(
                 FriendEntity(
                     id = 1,
@@ -202,7 +200,6 @@ abstract class AppDatabase : RoomDatabase() {
             )
             dao.insertFriends(friends)
 
-            // Начальный подарок-сюрприз от Маллики
             val initialSurprise = SurpriseEntity(
                 id = 1,
                 senderName = "Маллика",

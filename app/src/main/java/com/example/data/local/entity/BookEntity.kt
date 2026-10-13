@@ -15,5 +15,7 @@ data class BookEntity(
     val progressPercent: Int = 54,
     val generatedQuotesCount: Int = 5,
     val textContent: String = "",
-    val isCurrent: Boolean = false
+    val isCurrent: Boolean = false,
+    // Новое поле: URI выбранной обложки (если пользователь выбрал вручную)
+    val coverUri: String = ""
 )
