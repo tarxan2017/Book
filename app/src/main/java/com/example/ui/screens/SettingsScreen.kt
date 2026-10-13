@@ -28,8 +28,6 @@ import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.People
-import androidx.compose.material.icons.filled.RecordVoiceOver
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -90,7 +88,6 @@ fun SettingsScreen(
             .padding(horizontal = 16.dp, vertical = 12.dp)
             .testTag("settings_screen_content")
     ) {
-        // Заголовок "Настройки"
         Text(
             text = "Настройки",
             style = MaterialTheme.typography.displayMedium.copy(
@@ -104,7 +101,6 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(18.dp))
 
-        // Карточка профиля / Google Cloud Аккаунт
         Surface(
             shape = RoundedCornerShape(20.dp),
             color = MaterialTheme.colorScheme.surface,
@@ -167,7 +163,6 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(18.dp))
 
-        // Переключатель темы: "Тема" -> [Тёмная] [Светлая (#FFF8E7)]
         Surface(
             shape = RoundedCornerShape(18.dp),
             color = MaterialTheme.colorScheme.surface,
@@ -211,7 +206,6 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(18.dp))
 
-        // Пункты меню (как на экране 6)
         Surface(
             shape = RoundedCornerShape(20.dp),
             color = MaterialTheme.colorScheme.surface,
@@ -223,7 +217,7 @@ fun SettingsScreen(
                     icon = Icons.Default.Book,
                     title = "Книга",
                     subtitle = "Управление книгами",
-                    onClick = { viewModel.navigateTo(Screen.MyBook) }
+                    onClick = { viewModel.navigateTo(Screen.BookList) }
                 )
 
                 SettingsMenuRow(
@@ -258,7 +252,6 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(18.dp))
 
-        // Развернутый блок «Интеграции ИИ»
         if (showAiDetails) {
             Surface(
                 shape = RoundedCornerShape(20.dp),
@@ -276,7 +269,6 @@ fun SettingsScreen(
 
                     Spacer(modifier = Modifier.height(12.dp))
 
-                    // Модель выбора момента: Gemini
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -337,7 +329,6 @@ fun SettingsScreen(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // Модель для генерации видео: Magic Hour
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -364,7 +355,6 @@ fun SettingsScreen(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    // Лимит генераций в день: бейдж 5 и текущий остаток
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -412,7 +402,6 @@ fun SettingsScreen(
 
                     Spacer(modifier = Modifier.height(16.dp))
 
-                    // Проверка русского голоса TTS
                     Text(
                         text = "Озвучка книг на русском языке (TTS)",
                         style = MaterialTheme.typography.titleSmall,

@@ -31,6 +31,7 @@ import com.example.data.remote.GeminiApiClient
 import com.example.data.tts.RussianTtsManager
 import com.example.repository.LivingPageRepository
 import com.example.ui.components.LivingPageBottomNavBar
+import com.example.ui.screens.BookListScreen
 import com.example.ui.screens.FriendsScreen
 import com.example.ui.screens.GiftAnimationScreen
 import com.example.ui.screens.HomeScreen
@@ -101,6 +102,7 @@ class MainActivity : ComponentActivity() {
                 BackHandler(enabled = currentScreen !is Screen.Home) {
                     when (currentScreen) {
                         is Screen.Reader -> mainViewModel.navigateTo(Screen.MyBook)
+                        is Screen.BookList -> mainViewModel.navigateTo(Screen.Settings)
                         is Screen.VideoPlayer -> mainViewModel.navigateTo(Screen.Home)
                         is Screen.SendSurprise -> mainViewModel.navigateTo(Screen.Friends)
                         is Screen.ReceiveSurprise -> mainViewModel.navigateTo(Screen.Friends)
@@ -164,6 +166,7 @@ class MainActivity : ComponentActivity() {
                         when (val screen = currentScreen) {
                             is Screen.Home -> HomeScreen(viewModel = mainViewModel)
                             is Screen.MyBook -> MyBookScreen(viewModel = mainViewModel)
+                            is Screen.BookList -> BookListScreen(viewModel = mainViewModel)
                             is Screen.Friends -> FriendsScreen(viewModel = mainViewModel)
                             is Screen.Settings -> SettingsScreen(viewModel = mainViewModel)
                             is Screen.Reader -> ReaderScreen(viewModel = mainViewModel)

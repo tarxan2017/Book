@@ -1,6 +1,7 @@
 package com.example.data.local.dao
 
 import androidx.room.Dao
+import androidx.room.Delete
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
@@ -21,6 +22,9 @@ interface LivingPageDao {
     @Query("SELECT * FROM books WHERE isCurrent = 1 LIMIT 1")
     fun getCurrentBook(): Flow<BookEntity?>
 
+    @Query("SELECT * FROM books WHERE id = :id LIMIT 1")
+    suspend fun getBookById(id: Long): BookEntity?
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertBook(book: BookEntity): Long
 
@@ -30,9 +34,16 @@ interface LivingPageDao {
     @Update
     suspend fun updateBook(book: BookEntity)
 
-    // Сбрасываем флаг isCurrent у всех книг (перед добавлением новой)
+    @Delete
+    suspend fun deleteBook(book: BookEntity)
+
+    // Сбрасываем флаг isCurrent у всех книг (перед добавлением новой или сменой текущей)
     @Query("UPDATE books SET isCurrent = 0")
     suspend fun clearCurrentBook()
+
+    // Установить конкретную книгу текущей
+    @Query("UPDATE books SET isCurrent = 1 WHERE id = :id")
+    suspend fun setCurrentBookById(id: Long)
 
     // Цитаты
     @Query("SELECT * FROM quotes ORDER BY isToday DESC, timestamp DESC")

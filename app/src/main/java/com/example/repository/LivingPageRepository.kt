@@ -57,11 +57,28 @@ class LivingPageRepository(
 
     suspend fun updateBook(book: BookEntity) = dao.updateBook(book)
 
-    // ИСПРАВЛЕНО: перед добавлением новой книги сбрасываем isCurrent у всех остальных,
-    // чтобы новая книга стала текущей.
+    /**
+     * Добавить книгу. Перед добавлением сбрасываем флаг isCurrent у других,
+     * чтобы новая книга стала текущей.
+     */
     suspend fun addBook(book: BookEntity) {
         dao.clearCurrentBook()
         dao.insertBook(book)
+    }
+
+    /**
+     * Сделать книгу текущей. Сбрасываем флаг у всех, затем ставим у выбранной.
+     */
+    suspend fun setCurrentBook(book: BookEntity) {
+        dao.clearCurrentBook()
+        dao.setCurrentBookById(book.id)
+    }
+
+    /**
+     * Удалить книгу из базы.
+     */
+    suspend fun deleteBook(book: BookEntity) {
+        dao.deleteBook(book)
     }
 
     // Цитаты (Room + Cloud Sync)

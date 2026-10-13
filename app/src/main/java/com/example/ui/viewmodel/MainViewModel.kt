@@ -24,6 +24,7 @@ import kotlinx.coroutines.launch
 sealed class Screen {
     object Home : Screen()
     object MyBook : Screen()
+    object BookList : Screen()
     object Friends : Screen()
     object Settings : Screen()
     object Reader : Screen()
@@ -158,6 +159,30 @@ class MainViewModel(
         }
     }
 
+    // === РАБОТА С КНИГАМИ ===
+
+    /**
+     * Сделать книгу текущей (сбросить флаг у других).
+     */
+    fun setCurrentBook(book: BookEntity) {
+        viewModelScope.launch {
+            repository.setCurrentBook(book)
+            _userMessage.value = "Текущая книга: ${book.title}"
+        }
+    }
+
+    /**
+     * Удалить книгу из базы.
+     */
+    fun deleteBook(book: BookEntity) {
+        viewModelScope.launch {
+            repository.deleteBook(book)
+            _userMessage.value = "Книга удалена: ${book.title}"
+        }
+    }
+
+    // === ГЕНЕРАЦИЯ И ЗАГРУЗКА ===
+
     fun generateNewQuote() {
         viewModelScope.launch {
             val canGenerate = repository.canGenerateVideo()
@@ -210,7 +235,6 @@ class MainViewModel(
 
     /**
      * Загрузка книги из PDF с указанием названия, автора и обложки.
-     * Если пользователь не ввёл название/автора — используются значения по умолчанию.
      */
     fun loadBookFromPdf(
         context: Context,
