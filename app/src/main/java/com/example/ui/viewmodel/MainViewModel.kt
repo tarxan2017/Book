@@ -21,7 +21,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -80,8 +79,44 @@ class MainViewModel(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    private val _friendSearchQuery = MutableStateFlow("")
-    val friendSearchQuery: StateFlow<String> = _friendSearchQuery.asStateFlow()
+    // === ПОИСК ДРУЗЕЙ ===
+
+    private val _foundUser = MutableStateFlow<UserProfile?>(null)
+    val foundUser: StateFlow<UserProfile?> = _foundUser.asStateFlow()
+
+    private val _isSearchingFriend = MutableStateFlow(false)
+    val isSearchingFriend: StateFlow<Boolean> = _isSearchingFriend.asStateFlow()
+
+    fun findUserByUid(uid: String) {
+        if (uid.isBlank()) return
+        viewModelScope.launch {
+            _isSearchingFriend.value = true
+            _foundUser.value = null
+            val profile = repository.findUserByUid(uid.trim())
+            _foundUser.value = profile
+            _isSearchingFriend.value = false
+            if (profile == null) {
+                _userMessage.value = "Пользователь с таким ID не найден"
+            } else if (profile.userId == currentUser.value?.uid) {
+                _userMessage.value = "Это ваш ID"
+                _foundUser.value = null
+            } else if (cloudFriends.value.any { it.userId == profile.userId }) {
+                _userMessage.value = "Этот пользователь уже у вас в друзьях"
+                _foundUser.value = null
+            }
+        }
+    }
+
+    fun addFriendByUid(friendUid: String) {
+        val myUid = currentUser.value?.uid ?: return
+        viewModelScope.launch {
+            repository.addFriend(myUid, friendUid)
+            _foundUser.value = null
+            _userMessage.value = "Друг добавлен!"
+        }
+    }
+
+    // === ЧАТ ===
 
     private val _chatFriend = MutableStateFlow<UserProfile?>(null)
     val chatFriend: StateFlow<UserProfile?> = _chatFriend.asStateFlow()
@@ -94,20 +129,14 @@ class MainViewModel(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    fun setFriendSearchQuery(query: String) {
-        _friendSearchQuery.value = query
-    }
-
     fun inviteFriend(context: Context) {
         val myUid = currentUser.value?.uid ?: return
-        val inviteLink = "https://livingpage.web.app/invite/$myUid"
-        val shareText = "Присоединяйся к «Живой Странице»! Читаем вместе, делимся цитатами. $inviteLink"
-
+        val inviteText = "Мой ID в «Живой Странице»: $myUid\n\nСкачай приложение и вставь этот ID в разделе «Друзья»."
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
-            putExtra(Intent.EXTRA_TEXT, shareText)
+            putExtra(Intent.EXTRA_TEXT, inviteText)
         }
-        context.startActivity(Intent.createChooser(intent, "Пригласить друга"))
+        context.startActivity(Intent.createChooser(intent, "Поделиться ID"))
     }
 
     fun openChatWith(friend: UserProfile) {

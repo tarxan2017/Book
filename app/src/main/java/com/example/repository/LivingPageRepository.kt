@@ -64,6 +64,12 @@ class LivingPageRepository(
     suspend fun addFriend(myUid: String, friendUid: String) =
         cloudFirestoreService.addFriend(myUid, friendUid)
 
+    /**
+     * Ищет пользователя по UID. Возвращает профиль или null.
+     */
+    suspend fun findUserByUid(uid: String): UserProfile? =
+        cloudFirestoreService.findUserByUid(uid)
+
     // === ЧАТ ===
 
     suspend fun sendMessage(fromId: String, toId: String, text: String) =

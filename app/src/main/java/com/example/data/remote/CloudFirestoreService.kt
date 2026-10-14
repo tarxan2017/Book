@@ -92,6 +92,19 @@ class CloudFirestoreService(
         awaitClose { listener.remove() }
     }
 
+    /**
+     * Ищет пользователя по UID (Document ID в коллекции users).
+     */
+    suspend fun findUserByUid(uid: String): UserProfile? {
+        if (uid.isBlank()) return null
+        return try {
+            val doc = db.collection("users").document(uid.trim()).get().await()
+            doc.toObject(UserProfile::class.java)
+        } catch (_: Exception) {
+            null
+        }
+    }
+
     suspend fun saveQuoteToCloud(userId: String, quote: CloudQuote) {
         if (userId.isBlank()) return
         val collection = db.collection("users").document(userId).collection("quotes")
@@ -101,9 +114,6 @@ class CloudFirestoreService(
 
     // === ДРУЗЬЯ ===
 
-    /**
-     * Добавляет друг друга в списки друзей (атомарно).
-     */
     suspend fun addFriend(myUid: String, friendUid: String) {
         if (myUid.isBlank() || friendUid.isBlank() || myUid == friendUid) return
 
@@ -116,9 +126,6 @@ class CloudFirestoreService(
         }.await()
     }
 
-    /**
-     * Следит за списком друзей. Загружает профили по ID документа.
-     */
     fun observeFriends(userId: String): Flow<List<UserProfile>> = callbackFlow {
         if (userId.isBlank()) {
             trySend(emptyList())

@@ -1,6 +1,5 @@
 package com.example.ui.screens
 
-import android.content.Intent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -24,6 +23,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -49,6 +50,7 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.example.R
+import com.example.data.remote.model.UserProfile
 import com.example.ui.theme.PlayfairDisplayFontFamily
 import com.example.ui.viewmodel.MainViewModel
 import com.example.ui.viewmodel.Screen
@@ -59,8 +61,11 @@ fun FriendsScreen(
     modifier: Modifier = Modifier
 ) {
     val friends by viewModel.cloudFriends.collectAsStateWithLifecycle()
-    val searchQuery by viewModel.friendSearchQuery.collectAsStateWithLifecycle()
+    val foundUser by viewModel.foundUser.collectAsStateWithLifecycle()
+    val isSearching by viewModel.isSearchingFriend.collectAsStateWithLifecycle()
     val context = LocalContext.current
+
+    var searchQuery by remember { mutableStateOf("") }
 
     Column(
         modifier = modifier
@@ -69,7 +74,6 @@ fun FriendsScreen(
             .padding(horizontal = 16.dp, vertical = 12.dp)
             .testTag("friends_screen_content")
     ) {
-        // Шапка
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -101,17 +105,42 @@ fun FriendsScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Поиск
         OutlinedTextField(
             value = searchQuery,
-            onValueChange = { viewModel.setFriendSearchQuery(it) },
-            placeholder = { Text("Поиск друзей...", color = MaterialTheme.colorScheme.onSurfaceVariant) },
+            onValueChange = { searchQuery = it },
+            placeholder = {
+                Text(
+                    "Вставьте ID друга...",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            },
             leadingIcon = {
                 Icon(
                     imageVector = Icons.Default.Search,
                     contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+            },
+            trailingIcon = {
+                Button(
+                    onClick = {
+                        if (searchQuery.isNotBlank()) {
+                            viewModel.findUserByUid(searchQuery.trim())
+                        }
+                    },
+                    shape = RoundedCornerShape(10.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = MaterialTheme.colorScheme.primary
+                    ),
+                    modifier = Modifier.padding(end = 4.dp),
+                    enabled = searchQuery.isNotBlank() && !isSearching
+                ) {
+                    Text(
+                        text = if (isSearching) "..." else "Найти",
+                        style = MaterialTheme.typography.labelSmall
+                    )
+                }
             },
             singleLine = true,
             shape = RoundedCornerShape(16.dp),
@@ -124,9 +153,82 @@ fun FriendsScreen(
             modifier = Modifier.fillMaxWidth()
         )
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
-        // Список друзей
+        val found: UserProfile? = foundUser
+        if (found != null) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.primary.copy(alpha = 0.1f),
+                border = androidx.compose.foundation.BorderStroke(
+                    1.dp,
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.4f)
+                ),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(44.dp)
+                            .clip(CircleShape)
+                            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), CircleShape)
+                    ) {
+                        val photo = found.photoUrl
+                        if (photo.isNotBlank()) {
+                            AsyncImage(
+                                model = photo,
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        } else {
+                            Image(
+                                painter = painterResource(id = R.drawable.avatar_mallika),
+                                contentDescription = null,
+                                contentScale = ContentScale.Crop,
+                                modifier = Modifier.fillMaxSize()
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = found.displayName.ifBlank { "Пользователь" },
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Найден по ID",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Button(
+                        onClick = {
+                            viewModel.addFriendByUid(found.userId)
+                            searchQuery = ""
+                        },
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary
+                        ),
+                        modifier = Modifier.testTag("add_friend_button")
+                    ) {
+                        Text("Добавить", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+        }
+
         if (friends.isEmpty()) {
             Box(
                 modifier = Modifier
@@ -143,7 +245,7 @@ fun FriendsScreen(
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = "Пока нет друзей.\nПригласите друга по ссылке!",
+                        text = "Пока нет друзей.\nВставьте ID друга в поиск выше!",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -166,9 +268,8 @@ fun FriendsScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(modifier = Modifier.height(12.dp))
 
-        // Кнопка приглашения
         Surface(
             shape = RoundedCornerShape(16.dp),
             color = MaterialTheme.colorScheme.surface,
@@ -199,7 +300,7 @@ fun FriendsScreen(
                         color = MaterialTheme.colorScheme.onSurface
                     )
                     Text(
-                        text = "По ссылке или QR-код",
+                        text = "По ID из настроек",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -230,7 +331,6 @@ private fun FriendRow(
             modifier = Modifier.padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Аватар
             Box(
                 modifier = Modifier
                     .size(48.dp)
@@ -260,7 +360,6 @@ private fun FriendRow(
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            // Имя и статус
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = displayName,
@@ -286,7 +385,6 @@ private fun FriendRow(
                 }
             }
 
-            // Кнопка "Написать"
             Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant,
