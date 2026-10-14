@@ -1,6 +1,7 @@
 package com.example.ui.viewmodel
 
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -11,12 +12,18 @@ import com.example.data.local.entity.BookEntity
 import com.example.data.local.entity.FriendEntity
 import com.example.data.local.entity.QuoteEntity
 import com.example.data.local.entity.SurpriseEntity
+import com.example.data.remote.model.ChatMessage
+import com.example.data.remote.model.UserProfile
 import com.example.repository.LivingPageRepository
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -31,10 +38,12 @@ sealed class Screen {
     data class VideoPlayer(val quote: QuoteEntity) : Screen()
     data class SendSurprise(val defaultFriend: FriendEntity? = null) : Screen()
     data class ReceiveSurprise(val surprise: SurpriseEntity) : Screen()
+    data class Chat(val friend: UserProfile) : Screen()
     object OpenBookAnimation : Screen()
     object GiftAnimation : Screen()
 }
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class MainViewModel(
     private val repository: LivingPageRepository
 ) : ViewModel() {
@@ -62,6 +71,62 @@ class MainViewModel(
 
     val currentUser: StateFlow<com.google.firebase.auth.FirebaseUser?> = repository.currentUser
 
+    // === ДРУЗЬЯ ИЗ ОБЛАКА ===
+
+    val cloudFriends: StateFlow<List<UserProfile>> = currentUser
+        .flatMapLatest { user ->
+            if (user == null) flowOf(emptyList())
+            else repository.observeFriends(user.uid)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _friendSearchQuery = MutableStateFlow("")
+    val friendSearchQuery: StateFlow<String> = _friendSearchQuery.asStateFlow()
+
+    private val _chatFriend = MutableStateFlow<UserProfile?>(null)
+    val chatFriend: StateFlow<UserProfile?> = _chatFriend.asStateFlow()
+
+    val chatMessages: StateFlow<List<ChatMessage>> = _chatFriend
+        .flatMapLatest { friend ->
+            val me = currentUser.value
+            if (friend == null || me == null) flowOf(emptyList())
+            else repository.observeMessages(me.uid, friend.userId)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun setFriendSearchQuery(query: String) {
+        _friendSearchQuery.value = query
+    }
+
+    fun inviteFriend(context: Context) {
+        val myUid = currentUser.value?.uid ?: return
+        val inviteLink = "https://livingpage.web.app/invite/$myUid"
+        val shareText = "Присоединяйся к «Живой Странице»! Читаем вместе, делимся цитатами. $inviteLink"
+
+        val intent = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, shareText)
+        }
+        context.startActivity(Intent.createChooser(intent, "Пригласить друга"))
+    }
+
+    fun openChatWith(friend: UserProfile) {
+        _chatFriend.value = friend
+        _currentScreen.value = Screen.Chat(friend)
+    }
+
+    fun sendChatMessage(text: String) {
+        val friend = _chatFriend.value ?: return
+        val me = currentUser.value ?: return
+        if (text.isBlank()) return
+
+        viewModelScope.launch {
+            repository.sendMessage(me.uid, friend.userId, text)
+        }
+    }
+
+    // === АВТОРИЗАЦИЯ ===
+
     fun signInWithGoogle(context: android.content.Context) {
         viewModelScope.launch {
             val result = repository.signInWithGoogle(context)
@@ -77,6 +142,8 @@ class MainViewModel(
         repository.signOut()
         _userMessage.value = "Вы вышли из профиля"
     }
+
+    // === ЛИМИТ ===
 
     val dailyUsage: StateFlow<DailyUsage> = repository.dailyUsage
         .stateIn(
@@ -159,11 +226,8 @@ class MainViewModel(
         }
     }
 
-    // === РАБОТА С КНИГАМИ ===
+    // === КНИГИ ===
 
-    /**
-     * Сделать книгу текущей (сбросить флаг у других).
-     */
     fun setCurrentBook(book: BookEntity) {
         viewModelScope.launch {
             repository.setCurrentBook(book)
@@ -171,9 +235,6 @@ class MainViewModel(
         }
     }
 
-    /**
-     * Удалить книгу из базы.
-     */
     fun deleteBook(book: BookEntity) {
         viewModelScope.launch {
             repository.deleteBook(book)
@@ -181,7 +242,7 @@ class MainViewModel(
         }
     }
 
-    // === ГЕНЕРАЦИЯ И ЗАГРУЗКА ===
+    // === ГЕНЕРАЦИЯ ===
 
     fun generateNewQuote() {
         viewModelScope.launch {
@@ -233,9 +294,6 @@ class MainViewModel(
         }
     }
 
-    /**
-     * Загрузка книги из PDF с указанием названия, автора и обложки.
-     */
     fun loadBookFromPdf(
         context: Context,
         uri: Uri,

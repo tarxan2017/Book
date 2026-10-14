@@ -1,5 +1,6 @@
 package com.example.ui.screens
 
+import android.content.Intent
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -20,11 +21,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Link
-import androidx.compose.material.icons.filled.QrCode
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -41,17 +39,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
 import com.example.R
-import com.example.data.local.entity.FriendEntity
-import com.example.data.local.entity.SurpriseEntity
 import com.example.ui.theme.PlayfairDisplayFontFamily
 import com.example.ui.viewmodel.MainViewModel
 import com.example.ui.viewmodel.Screen
@@ -61,13 +58,9 @@ fun FriendsScreen(
     viewModel: MainViewModel,
     modifier: Modifier = Modifier
 ) {
-    val allFriends by viewModel.allFriends.collectAsStateWithLifecycle()
-    var searchQuery by remember { mutableStateOf("") }
-
-    val filteredFriends = remember(allFriends, searchQuery) {
-        if (searchQuery.isBlank()) allFriends
-        else allFriends.filter { it.name.contains(searchQuery, ignoreCase = true) }
-    }
+    val friends by viewModel.cloudFriends.collectAsStateWithLifecycle()
+    val searchQuery by viewModel.friendSearchQuery.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
     Column(
         modifier = modifier
@@ -76,7 +69,7 @@ fun FriendsScreen(
             .padding(horizontal = 16.dp, vertical = 12.dp)
             .testTag("friends_screen_content")
     ) {
-        // Шапка: Друзья +
+        // Шапка
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -95,28 +88,28 @@ fun FriendsScreen(
             )
 
             IconButton(
-                onClick = { viewModel.navigateTo(Screen.SendSurprise()) },
+                onClick = { viewModel.inviteFriend(context) },
                 modifier = Modifier.testTag("friends_add_button")
             ) {
                 Icon(
                     imageVector = Icons.Default.Add,
-                    contentDescription = "Добавить",
+                    contentDescription = "Пригласить",
                     tint = MaterialTheme.colorScheme.onBackground
                 )
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
-        // Поиск друзей...
+        // Поиск
         OutlinedTextField(
             value = searchQuery,
-            onValueChange = { searchQuery = it },
-            placeholder = { Text("Поиск друзей...", style = MaterialTheme.typography.bodyMedium) },
+            onValueChange = { viewModel.setFriendSearchQuery(it) },
+            placeholder = { Text("Поиск друзей...", color = MaterialTheme.colorScheme.onSurfaceVariant) },
             leadingIcon = {
                 Icon(
                     imageVector = Icons.Default.Search,
-                    contentDescription = "Поиск",
+                    contentDescription = null,
                     tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             },
@@ -126,215 +119,184 @@ fun FriendsScreen(
                 focusedContainerColor = MaterialTheme.colorScheme.surface,
                 unfocusedContainerColor = MaterialTheme.colorScheme.surface,
                 focusedBorderColor = MaterialTheme.colorScheme.primary,
-                unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
+                unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
             ),
-            modifier = Modifier
-                .fillMaxWidth()
-                .testTag("friends_search_field")
+            modifier = Modifier.fillMaxWidth()
         )
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        LazyColumn(
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-            modifier = Modifier.weight(1f)
-        ) {
-            items(filteredFriends) { friend ->
-                FriendItemRow(
-                    friend = friend,
-                    onWriteClick = {
-                        viewModel.navigateTo(Screen.SendSurprise(defaultFriend = friend))
-                    }
-                )
+        // Список друзей
+        if (friends.isEmpty()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f),
+                contentAlignment = Alignment.Center
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        imageVector = Icons.Default.Person,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(48.dp)
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Text(
+                        text = "Пока нет друзей.\nПригласите друга по ссылке!",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
-
-            item {
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Блок "Активность" (как на экране 3)
-                Surface(
-                    shape = RoundedCornerShape(18.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable {
-                            val surprise = SurpriseEntity(
-                                id = 1,
-                                senderName = "Маллика",
-                                receiverName = "Вы",
-                                quoteText = "«Иногда именно потеря показывает нам, что по-настоящему важно.»",
-                                author = "Пауло Коэльо",
-                                bookTitle = "«Алхимик»",
-                                formatType = "OPEN_BOOK",
-                                durationSeconds = 4
-                            )
-                            viewModel.navigateTo(Screen.ReceiveSurprise(surprise))
-                        }
-                        .testTag("friends_activity_card")
-                ) {
-                    Column(modifier = Modifier.padding(16.dp)) {
-                        Text(
-                            text = "Активность",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-
-                        Spacer(modifier = Modifier.height(8.dp))
-
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Column {
-                                Text(
-                                    text = "Маллика отправила вам цитату",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = "Сегодня, 10:24",
-                                    style = MaterialTheme.typography.labelSmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-
-                            Icon(
-                                imageVector = Icons.AutoMirrored.Filled.ArrowForwardIos,
-                                contentDescription = "Открыть",
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    }
+        } else {
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.weight(1f)
+            ) {
+                items(friends, key = { it.userId }) { friend ->
+                    FriendRow(
+                        displayName = friend.displayName.ifBlank { "Читатель" },
+                        statusText = friend.statusText.ifBlank { if (friend.isOnline) "Онлайн" else "Не в сети" },
+                        photoUrl = friend.photoUrl,
+                        isOnline = friend.isOnline,
+                        onWriteClick = { viewModel.openChatWith(friend) }
+                    )
                 }
+            }
+        }
 
-                Spacer(modifier = Modifier.height(14.dp))
+        Spacer(modifier = Modifier.height(16.dp))
 
-                // Блок "Пригласить друга: По ссылке или QR-код"
-                Surface(
-                    shape = RoundedCornerShape(18.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { /* Копировать ссылку */ }
-                        .testTag("invite_friend_card")
-                ) {
-                    Row(
-                        modifier = Modifier.padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                imageVector = Icons.Default.QrCode,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(24.dp)
-                            )
-                            Spacer(modifier = Modifier.width(12.dp))
-                            Column {
-                                Text(
-                                    text = "Пригласить друга",
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                Text(
-                                    text = "По ссылке или QR-код",
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-
-                        Icon(
-                            imageVector = Icons.Default.Link,
-                            contentDescription = "Ссылка",
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(22.dp)
-                        )
-                    }
+        // Кнопка приглашения
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface,
+            border = androidx.compose.foundation.BorderStroke(
+                1.dp,
+                MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { viewModel.inviteFriend(context) }
+                .testTag("invite_friend_card")
+        ) {
+            Row(
+                modifier = Modifier.padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Add,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(22.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = "Пригласить друга",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "По ссылке или QR-код",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                 }
-
-                Spacer(modifier = Modifier.height(16.dp))
             }
         }
     }
 }
 
 @Composable
-private fun FriendItemRow(
-    friend: FriendEntity,
+private fun FriendRow(
+    displayName: String,
+    statusText: String,
+    photoUrl: String,
+    isOnline: Boolean,
     onWriteClick: () -> Unit
 ) {
     Surface(
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surface,
-        border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.35f)),
-        modifier = Modifier
-            .fillMaxWidth()
-            .testTag("friend_row_${friend.id}")
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+        ),
+        modifier = Modifier.fillMaxWidth()
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            modifier = Modifier.padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Box {
-                    Image(
-                        painter = painterResource(id = friend.avatarRes),
-                        contentDescription = friend.name,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier
-                            .size(46.dp)
-                            .clip(CircleShape)
-                            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), CircleShape)
+            // Аватар
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .border(
+                        1.dp,
+                        MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                        CircleShape
                     )
-                    if (friend.isOnline) {
+            ) {
+                if (photoUrl.isNotBlank()) {
+                    AsyncImage(
+                        model = photoUrl,
+                        contentDescription = displayName,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Image(
+                        painter = painterResource(id = R.drawable.avatar_mallika),
+                        contentDescription = displayName,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            // Имя и статус
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = displayName,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (isOnline) {
                         Box(
                             modifier = Modifier
-                                .size(12.dp)
+                                .size(8.dp)
                                 .clip(CircleShape)
-                                .background(Color(0xFF4CAF50))
-                                .border(2.dp, MaterialTheme.colorScheme.surface, CircleShape)
-                                .align(Alignment.BottomEnd)
+                                .background(MaterialTheme.colorScheme.primary)
                         )
+                        Spacer(modifier = Modifier.width(6.dp))
                     }
-                }
-
-                Spacer(modifier = Modifier.width(14.dp))
-
-                Column {
                     Text(
-                        text = friend.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Text(
-                        text = friend.statusText,
+                        text = statusText,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
 
+            // Кнопка "Написать"
             Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier
-                    .clickable(onClick = onWriteClick)
-                    .testTag("write_button_${friend.id}")
+                modifier = Modifier.clickable(onClick = onWriteClick)
             ) {
                 Text(
                     text = "Написать",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
                 )
             }
         }

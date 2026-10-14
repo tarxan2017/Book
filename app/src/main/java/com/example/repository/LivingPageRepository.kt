@@ -12,6 +12,7 @@ import com.example.data.local.entity.QuoteEntity
 import com.example.data.local.entity.SurpriseEntity
 import com.example.data.remote.CloudFirestoreService
 import com.example.data.remote.GeminiApiClient
+import com.example.data.remote.model.ChatMessage
 import com.example.data.remote.model.CloudQuote
 import com.example.data.remote.model.CloudSurprise
 import com.example.data.remote.model.UserProfile
@@ -31,7 +32,8 @@ class LivingPageRepository(
     private val authManager: GoogleAuthManager
 ) {
 
-    // Авторизация Google Cloud
+    // === АВТОРИЗАЦИЯ ===
+
     val currentUser: StateFlow<FirebaseUser?> = authManager.currentUser
 
     suspend fun signInWithGoogle(context: Context): Result<FirebaseUser> {
@@ -51,37 +53,48 @@ class LivingPageRepository(
 
     fun signOut() = authManager.signOut()
 
-    // Книги
+    // === ДРУЗЬЯ (ОБЛАКО) ===
+
+    fun observeFriends(userId: String): Flow<List<UserProfile>> =
+        cloudFirestoreService.observeFriends(userId)
+
+    fun observeUserProfile(userId: String): Flow<UserProfile?> =
+        cloudFirestoreService.observeUserProfile(userId)
+
+    suspend fun addFriend(myUid: String, friendUid: String) =
+        cloudFirestoreService.addFriend(myUid, friendUid)
+
+    // === ЧАТ ===
+
+    suspend fun sendMessage(fromId: String, toId: String, text: String) =
+        cloudFirestoreService.sendMessage(fromId, toId, text)
+
+    fun observeMessages(myId: String, friendId: String): Flow<List<ChatMessage>> =
+        cloudFirestoreService.observeMessages(myId, friendId)
+
+    // === КНИГИ ===
+
     val allBooks: Flow<List<BookEntity>> = dao.getAllBooks()
     val currentBook: Flow<BookEntity?> = dao.getCurrentBook()
 
     suspend fun updateBook(book: BookEntity) = dao.updateBook(book)
 
-    /**
-     * Добавить книгу. Перед добавлением сбрасываем флаг isCurrent у других,
-     * чтобы новая книга стала текущей.
-     */
     suspend fun addBook(book: BookEntity) {
         dao.clearCurrentBook()
         dao.insertBook(book)
     }
 
-    /**
-     * Сделать книгу текущей. Сбрасываем флаг у всех, затем ставим у выбранной.
-     */
     suspend fun setCurrentBook(book: BookEntity) {
         dao.clearCurrentBook()
         dao.setCurrentBookById(book.id)
     }
 
-    /**
-     * Удалить книгу из базы.
-     */
     suspend fun deleteBook(book: BookEntity) {
         dao.deleteBook(book)
     }
 
-    // Цитаты (Room + Cloud Sync)
+    // === ЦИТАТЫ ===
+
     val allQuotes: Flow<List<QuoteEntity>> = dao.getAllQuotes()
     val todayQuote: Flow<QuoteEntity?> = dao.getTodayQuote()
 
@@ -108,10 +121,12 @@ class LivingPageRepository(
         dao.updateQuote(quote.copy(isFavorite = !quote.isFavorite))
     }
 
-    // Друзья
+    // === ДРУЗЬЯ (ЛОКАЛЬНО — старый слой) ===
+
     val allFriends: Flow<List<FriendEntity>> = dao.getAllFriends()
 
-    // Сюрпризы (Room + Google Cloud Firestore)
+    // === СЮРПРИЗЫ ===
+
     val allSurprises: Flow<List<SurpriseEntity>> = dao.getAllSurprises()
     val latestUnopenedSurprise: Flow<SurpriseEntity?> = dao.getLatestUnopenedSurprise()
 
@@ -139,11 +154,11 @@ class LivingPageRepository(
         dao.updateSurprise(surprise.copy(isOpened = true))
     }
 
-    // Настройки
+    // === НАСТРОЙКИ ===
+
     val isDarkTheme: Flow<Boolean> = preferencesManager.isDarkTheme
     suspend fun setDarkTheme(isDark: Boolean) = preferencesManager.setDarkTheme(isDark)
 
-    // Суточный лимит DataStore сервиса (5/день)
     val dailyUsage: Flow<DailyUsage> = dailyGenerationService.usageFlow
     suspend fun canGenerateVideo(): Boolean = dailyGenerationService.canGenerate()
     suspend fun consumeDailyGeneration(): Boolean = dailyGenerationService.tryConsumeGeneration()
@@ -161,7 +176,8 @@ class LivingPageRepository(
     val ttsSpeed: Flow<Float> = preferencesManager.ttsSpeed
     suspend fun setTtsSpeed(speed: Float) = preferencesManager.setTtsSpeed(speed)
 
-    // ИИ Генерация
+    // === ИИ ===
+
     suspend fun generateQuoteWithGemini(
         bookTitle: String,
         author: String,
@@ -171,7 +187,8 @@ class LivingPageRepository(
         return geminiApiClient.generateLiteraryThought(bookTitle, author, customPrompt, userKey)
     }
 
-    // Озвучка
+    // === ОЗВУЧКА ===
+
     fun speakRussian(text: String, speed: Float = 1.0f) = ttsManager.speak(text, speed)
     fun stopSpeech() = ttsManager.stop()
     fun openTtsSettings() = ttsManager.openTtsSettings()

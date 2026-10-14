@@ -32,6 +32,7 @@ import com.example.data.tts.RussianTtsManager
 import com.example.repository.LivingPageRepository
 import com.example.ui.components.LivingPageBottomNavBar
 import com.example.ui.screens.BookListScreen
+import com.example.ui.screens.ChatScreen
 import com.example.ui.screens.FriendsScreen
 import com.example.ui.screens.GiftAnimationScreen
 import com.example.ui.screens.HomeScreen
@@ -103,6 +104,7 @@ class MainActivity : ComponentActivity() {
                     when (currentScreen) {
                         is Screen.Reader -> mainViewModel.navigateTo(Screen.MyBook)
                         is Screen.BookList -> mainViewModel.navigateTo(Screen.Settings)
+                        is Screen.Chat -> mainViewModel.navigateTo(Screen.Friends)
                         is Screen.VideoPlayer -> mainViewModel.navigateTo(Screen.Home)
                         is Screen.SendSurprise -> mainViewModel.navigateTo(Screen.Friends)
                         is Screen.ReceiveSurprise -> mainViewModel.navigateTo(Screen.Friends)
@@ -170,6 +172,11 @@ class MainActivity : ComponentActivity() {
                             is Screen.Friends -> FriendsScreen(viewModel = mainViewModel)
                             is Screen.Settings -> SettingsScreen(viewModel = mainViewModel)
                             is Screen.Reader -> ReaderScreen(viewModel = mainViewModel)
+                            is Screen.Chat -> ChatScreen(
+                                viewModel = mainViewModel,
+                                friendName = screen.friend.displayName.ifBlank { "Читатель" },
+                                friendPhotoUrl = screen.friend.photoUrl
+                            )
                             is Screen.VideoPlayer -> VideoPlayerScreen(viewModel = mainViewModel, quote = screen.quote)
                             is Screen.SendSurprise -> SendSurpriseScreen(viewModel = mainViewModel, defaultFriend = screen.defaultFriend)
                             is Screen.ReceiveSurprise -> ReceiveSurpriseScreen(viewModel = mainViewModel, surprise = screen.surprise)
