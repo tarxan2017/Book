@@ -5,6 +5,7 @@ import com.example.R
 import com.example.data.remote.model.ChatMessage
 import com.example.data.remote.model.CloudQuote
 import com.example.data.remote.model.CloudSurprise
+import com.example.data.remote.model.PublicBook
 import com.example.data.remote.model.UserProfile
 import com.google.firebase.FirebaseApp
 import com.google.firebase.firestore.FieldValue
@@ -53,10 +54,6 @@ class CloudFirestoreService(
 
     // === ПРОФИЛЬ ===
 
-    /**
-     * Сохраняет профиль. Обновляет ТОЛЬКО displayName, photoUrl, statusText, isOnline.
-     * Поле friends НЕ трогает — чтобы при входе не стирать список друзей.
-     */
     suspend fun syncUserProfile(userProfile: UserProfile) {
         if (userProfile.userId.isBlank()) return
 
@@ -92,9 +89,6 @@ class CloudFirestoreService(
         awaitClose { listener.remove() }
     }
 
-    /**
-     * Ищет пользователя по UID (Document ID в коллекции users).
-     */
     suspend fun findUserByUid(uid: String): UserProfile? {
         if (uid.isBlank()) return null
         return try {
@@ -227,5 +221,104 @@ class CloudFirestoreService(
             }
 
         awaitClose { listener.remove() }
+    }
+
+    // === ПУБЛИЧНАЯ БИБЛИОТЕКА ===
+
+    fun observePublicBooks(): Flow<List<PublicBook>> = callbackFlow {
+        val listener = db.collection("public_books")
+            .orderBy("createdAt", Query.Direction.DESCENDING)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                val books = snapshot?.documents?.mapNotNull { it.toObject(PublicBook::class.java) } ?: emptyList()
+                trySend(books)
+            }
+
+        awaitClose { listener.remove() }
+    }
+
+    fun observeRecentPublicBooks(limit: Long = 5): Flow<List<PublicBook>> = callbackFlow {
+        val listener = db.collection("public_books")
+            .orderBy("createdAt", Query.Direction.DESCENDING)
+            .limit(limit)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                val books = snapshot?.documents?.mapNotNull { it.toObject(PublicBook::class.java) } ?: emptyList()
+                trySend(books)
+            }
+
+        awaitClose { listener.remove() }
+    }
+
+    suspend fun publishBook(book: PublicBook): String {
+        val collection = db.collection("public_books")
+        val docRef = collection.document()
+        docRef.set(book.copy(id = docRef.id)).await()
+        return docRef.id
+    }
+
+    suspend fun updatePublicBook(book: PublicBook) {
+        if (book.id.isBlank()) return
+        db.collection("public_books").document(book.id).set(book).await()
+    }
+
+    suspend fun deletePublicBook(bookId: String) {
+        if (bookId.isBlank()) return
+        db.collection("public_books").document(bookId).delete().await()
+    }
+
+    // === МОДЕРАТОРЫ ===
+
+    /**
+     * Следит за списком модераторов (их UID).
+     */
+    fun observeModerators(): Flow<List<String>> = callbackFlow {
+        val listener = db.collection("moderators")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    trySend(emptyList())
+                    return@addSnapshotListener
+                }
+                val uids = snapshot?.documents?.map { it.id } ?: emptyList()
+                trySend(uids)
+            }
+
+        awaitClose { listener.remove() }
+    }
+
+    /**
+     * Назначает пользователя модератором.
+     */
+    suspend fun addModerator(uid: String, name: String) {
+        if (uid.isBlank()) return
+        val data = mapOf("name" to name)
+        db.collection("moderators").document(uid).set(data).await()
+    }
+
+    /**
+     * Снимает пользователя с роли модератора.
+     */
+    suspend fun removeModerator(uid: String) {
+        if (uid.isBlank()) return
+        db.collection("moderators").document(uid).delete().await()
+    }
+
+    /**
+     * Проверяет, является ли пользователь модератором (одноразовый запрос).
+     */
+    suspend fun isModerator(uid: String): Boolean {
+        if (uid.isBlank()) return false
+        return try {
+            val doc = db.collection("moderators").document(uid).get().await()
+            doc.exists()
+        } catch (_: Exception) {
+            false
+        }
     }
 }

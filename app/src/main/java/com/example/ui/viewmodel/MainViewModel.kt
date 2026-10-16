@@ -13,6 +13,7 @@ import com.example.data.local.entity.FriendEntity
 import com.example.data.local.entity.QuoteEntity
 import com.example.data.local.entity.SurpriseEntity
 import com.example.data.remote.model.ChatMessage
+import com.example.data.remote.model.PublicBook
 import com.example.data.remote.model.UserProfile
 import com.example.repository.LivingPageRepository
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -27,6 +28,8 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
+const val ADMIN_UID = "AcWTQ3Gf3FYquad3wfSk1CcEvcl3"
+
 sealed class Screen {
     object Home : Screen()
     object MyBook : Screen()
@@ -34,6 +37,8 @@ sealed class Screen {
     object Friends : Screen()
     object Settings : Screen()
     object Reader : Screen()
+    object PublicLibrary : Screen()
+    data class PublicBookDetail(val book: PublicBook) : Screen()
     data class VideoPlayer(val quote: QuoteEntity) : Screen()
     data class SendSurprise(val defaultFriend: FriendEntity? = null) : Screen()
     data class ReceiveSurprise(val surprise: SurpriseEntity) : Screen()
@@ -70,6 +75,15 @@ class MainViewModel(
 
     val currentUser: StateFlow<com.google.firebase.auth.FirebaseUser?> = repository.currentUser
 
+    // === АДМИН ===
+
+    val isAdmin: StateFlow<Boolean> = currentUser
+        .map { user -> user?.uid == ADMIN_UID }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    val moderators: StateFlow<List<String>> = repository.observeModerators()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     // === ДРУЗЬЯ ИЗ ОБЛАКА ===
 
     val cloudFriends: StateFlow<List<UserProfile>> = currentUser
@@ -79,13 +93,78 @@ class MainViewModel(
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // === ПОИСК ДРУЗЕЙ ===
-
     private val _foundUser = MutableStateFlow<UserProfile?>(null)
     val foundUser: StateFlow<UserProfile?> = _foundUser.asStateFlow()
 
     private val _isSearchingFriend = MutableStateFlow(false)
     val isSearchingFriend: StateFlow<Boolean> = _isSearchingFriend.asStateFlow()
+
+    // === ПУБЛИЧНАЯ БИБЛИОТЕКА ===
+
+    val publicBooks: StateFlow<List<PublicBook>> = repository.observePublicBooks()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val recentPublicBooks: StateFlow<List<PublicBook>> = repository.observeRecentPublicBooks(5)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _coverUrls = MutableStateFlow<Map<String, String>>(emptyMap())
+    val coverUrls: StateFlow<Map<String, String>> = _coverUrls.asStateFlow()
+
+    private val _selectedPublicBook = MutableStateFlow<PublicBook?>(null)
+    val selectedPublicBook: StateFlow<PublicBook?> = _selectedPublicBook.asStateFlow()
+
+    private val _isDownloading = MutableStateFlow(false)
+    val isDownloading: StateFlow<Boolean> = _isDownloading.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            publicBooks.collect { books ->
+                val currentMap = _coverUrls.value.toMutableMap()
+                var changed = false
+
+                for (book in books) {
+                    if (book.coverFileId.isNotBlank() && !currentMap.containsKey(book.coverFileId)) {
+                        val url = repository.getCoverUrl(book.coverFileId)
+                        if (url != null) {
+                            currentMap[book.coverFileId] = url
+                            changed = true
+                        }
+                    }
+                }
+
+                if (changed) _coverUrls.value = currentMap
+            }
+        }
+    }
+
+    fun getCoverUrl(coverFileId: String): String? =
+        if (coverFileId.isBlank()) null else _coverUrls.value[coverFileId]
+
+    fun openPublicBook(book: PublicBook) {
+        _selectedPublicBook.value = book
+        _currentScreen.value = Screen.PublicBookDetail(book)
+    }
+
+    fun openPublicLibrary() {
+        _currentScreen.value = Screen.PublicLibrary
+    }
+
+    fun downloadPublicBook(context: Context, book: PublicBook) {
+        viewModelScope.launch {
+            _isDownloading.value = true
+            val result = repository.downloadPublicBook(context, book)
+            _isDownloading.value = false
+
+            result.onSuccess {
+                _userMessage.value = "Книга скачана! Открой «Мою книгу»."
+                _currentScreen.value = Screen.MyBook
+            }.onFailure { error ->
+                _userMessage.value = "Ошибка скачивания: ${error.localizedMessage}"
+            }
+        }
+    }
+
+    // === ДРУЗЬЯ ===
 
     fun findUserByUid(uid: String) {
         if (uid.isBlank()) return
@@ -156,7 +235,7 @@ class MainViewModel(
 
     // === АВТОРИЗАЦИЯ ===
 
-    fun signInWithGoogle(context: android.content.Context) {
+    fun signInWithGoogle(context: Context) {
         viewModelScope.launch {
             val result = repository.signInWithGoogle(context)
             result.onSuccess { user ->
@@ -252,6 +331,22 @@ class MainViewModel(
     fun setReaderFontSize(size: Float) {
         viewModelScope.launch {
             repository.setReaderFontSize(size)
+        }
+    }
+
+    // === МОДЕРАТОРЫ ===
+
+    fun addModerator(uid: String, name: String) {
+        viewModelScope.launch {
+            repository.addModerator(uid, name)
+            _userMessage.value = "Модератор добавлен"
+        }
+    }
+
+    fun removeModerator(uid: String) {
+        viewModelScope.launch {
+            repository.removeModerator(uid)
+            _userMessage.value = "Модератор удалён"
         }
     }
 

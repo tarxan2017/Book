@@ -1,6 +1,5 @@
 package com.example.ui.screens
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -26,11 +25,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
@@ -51,7 +48,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -60,8 +56,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
 import com.example.R
 import com.example.data.local.entity.QuoteEntity
+import com.example.data.remote.model.PublicBook
 import com.example.ui.theme.PlayfairDisplayFontFamily
 import com.example.ui.viewmodel.MainViewModel
 import com.example.ui.viewmodel.Screen
@@ -73,6 +71,8 @@ fun HomeScreen(
 ) {
     val todayQuote by viewModel.todayQuote.collectAsStateWithLifecycle()
     val allQuotes by viewModel.allQuotes.collectAsStateWithLifecycle()
+    val recentPublicBooks by viewModel.recentPublicBooks.collectAsStateWithLifecycle()
+    val coverUrls by viewModel.coverUrls.collectAsStateWithLifecycle()
     val remainingGenerations by viewModel.remainingGenerations.collectAsStateWithLifecycle()
     val isAiThinking by viewModel.isAiThinking.collectAsStateWithLifecycle()
 
@@ -86,7 +86,7 @@ fun HomeScreen(
             .padding(horizontal = 16.dp, vertical = 12.dp)
             .testTag("home_screen_content")
     ) {
-        // Шапка: Цитата дня + Книги, которые говорят с тобой + Шестеренка
+        // === ШАПКА ===
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -125,11 +125,12 @@ fun HomeScreen(
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        // Бейдж суточного лимита: "Осталось X из 5 генераций сегодня"
+        // === БЕЙДЖ ЛИМИТА ===
         val isLimitReached = remainingGenerations <= 0
         Surface(
             shape = RoundedCornerShape(20.dp),
-            color = if (isLimitReached) MaterialTheme.colorScheme.error.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+            color = if (isLimitReached) MaterialTheme.colorScheme.error.copy(alpha = 0.15f)
+            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
             modifier = Modifier
                 .clickable { if (isLimitReached) viewModel.generateNewQuote() }
                 .testTag("badge_daily_limit")
@@ -146,7 +147,8 @@ fun HomeScreen(
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = if (isLimitReached) "Лимит генераций исчерпан: 0 из 5 на сегодня" else "Осталось $remainingGenerations из 5 генераций сегодня",
+                    text = if (isLimitReached) "Лимит генераций исчерпан: 0 из 5 на сегодня"
+                    else "Осталось $remainingGenerations из 5 генераций сегодня",
                     style = MaterialTheme.typography.labelMedium,
                     color = if (isLimitReached) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
                     fontWeight = if (isLimitReached) FontWeight.SemiBold else FontWeight.Normal
@@ -156,7 +158,7 @@ fun HomeScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Главная видео-карточка с цитатой дня (как на экранах 1 и 7)
+        // === ГЛАВНАЯ КАРТОЧКА ЦИТАТЫ ===
         val heroQuote = todayQuote ?: allQuotes.firstOrNull() ?: QuoteEntity(
             quoteText = "«Иногда именно потеря показывает нам, что по-настоящему важно.»",
             author = "Пауло Коэльо",
@@ -174,7 +176,6 @@ fun HomeScreen(
                 .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), RoundedCornerShape(22.dp))
                 .testTag("hero_quote_card")
         ) {
-            // Фоновое изображение (книга со свечой или чашкой)
             Image(
                 painter = painterResource(id = heroQuote.bgRes),
                 contentDescription = "Фон цитаты",
@@ -182,7 +183,6 @@ fun HomeScreen(
                 modifier = Modifier.fillMaxSize()
             )
 
-            // Кинематографический градиент для читаемости
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -197,7 +197,6 @@ fun HomeScreen(
                     )
             )
 
-            // Бейдж таймкода видео (например, 0:18)
             Surface(
                 shape = RoundedCornerShape(12.dp),
                 color = Color.Black.copy(alpha = 0.6f),
@@ -225,7 +224,6 @@ fun HomeScreen(
                 }
             }
 
-            // Текст цитаты, автор и действия
             Column(
                 modifier = Modifier
                     .align(Alignment.BottomStart)
@@ -251,7 +249,6 @@ fun HomeScreen(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // Статус "ИИ думает..." или кнопки
                 if (isAiThinking) {
                     Surface(
                         shape = RoundedCornerShape(16.dp),
@@ -277,7 +274,6 @@ fun HomeScreen(
                     }
                 }
 
-                // Кнопки: «Смотреть» и «Поделиться»
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -300,20 +296,17 @@ fun HomeScreen(
                             modifier = Modifier.size(18.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Смотреть",
-                            fontWeight = FontWeight.SemiBold
-                        )
+                        Text(text = "Смотреть", fontWeight = FontWeight.SemiBold)
                     }
 
                     OutlinedButton(
                         onClick = { viewModel.navigateTo(Screen.SendSurprise()) },
                         shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = Color.White
-                        ),
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White),
                         border = ButtonDefaults.outlinedButtonBorder.copy(
-                            brush = Brush.horizontalGradient(listOf(Color.White.copy(alpha = 0.7f), Color.White.copy(alpha = 0.7f)))
+                            brush = Brush.horizontalGradient(
+                                listOf(Color.White.copy(alpha = 0.7f), Color.White.copy(alpha = 0.7f))
+                            )
                         ),
                         modifier = Modifier
                             .weight(1f)
@@ -326,10 +319,7 @@ fun HomeScreen(
                             modifier = Modifier.size(16.dp)
                         )
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = "Поделиться",
-                            fontWeight = FontWeight.Medium
-                        )
+                        Text(text = "Поделиться", fontWeight = FontWeight.Medium)
                     }
                 }
             }
@@ -337,14 +327,14 @@ fun HomeScreen(
 
         Spacer(modifier = Modifier.height(24.dp))
 
-        // Блок "Прошлые цитаты" + "Все"
+        // === ПУБЛИЧНАЯ БИБЛИОТЕКА (превью) ===
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                text = "Прошлые цитаты",
+                text = "Общая библиотека",
                 style = MaterialTheme.typography.titleLarge.copy(
                     fontFamily = PlayfairDisplayFontFamily,
                     fontWeight = FontWeight.Bold
@@ -357,25 +347,40 @@ fun HomeScreen(
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier
-                    .clickable { viewModel.navigateTo(Screen.MyBook) }
+                    .clickable { viewModel.openPublicLibrary() }
                     .padding(4.dp)
-                    .testTag("all_quotes_button")
+                    .testTag("all_public_books_button")
             )
         }
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Горизонтальная лента карточек (24 окт, 23 окт, 22 окт, 21 окт)
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            contentPadding = PaddingValues(end = 8.dp),
-            modifier = Modifier.testTag("past_quotes_row")
-        ) {
-            items(allQuotes.filter { !it.isToday }) { quote ->
-                PastQuoteCard(
-                    quote = quote,
-                    onClick = { viewModel.navigateTo(Screen.VideoPlayer(quote)) }
+        if (recentPublicBooks.isEmpty()) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(
+                    text = "Пока нет книг в общей библиотеке",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(16.dp)
                 )
+            }
+        } else {
+            LazyRow(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                contentPadding = PaddingValues(end = 8.dp),
+                modifier = Modifier.testTag("public_books_row")
+            ) {
+                items(recentPublicBooks, key = { it.id }) { book ->
+                    PublicBookPreviewCard(
+                        book = book,
+                        coverUrl = coverUrls[book.coverFileId],
+                        onClick = { viewModel.openPublicBook(book) }
+                    )
+                }
             }
         }
 
@@ -384,53 +389,54 @@ fun HomeScreen(
 }
 
 @Composable
-private fun PastQuoteCard(
-    quote: QuoteEntity,
+private fun PublicBookPreviewCard(
+    book: PublicBook,
+    coverUrl: String?,
     onClick: () -> Unit
 ) {
     Column(
         modifier = Modifier
-            .width(96.dp)
+            .width(110.dp)
             .clickable(onClick = onClick)
-            .testTag("past_quote_card_${quote.id}"),
+            .testTag("public_book_preview_${book.id}"),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
             modifier = Modifier
-                .size(96.dp)
-                .clip(RoundedCornerShape(16.dp))
-                .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), RoundedCornerShape(16.dp))
+                .size(width = 110.dp, height = 150.dp)
+                .clip(RoundedCornerShape(14.dp))
+                .border(
+                    1.dp,
+                    MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
+                    RoundedCornerShape(14.dp)
+                )
         ) {
-            Image(
-                painter = painterResource(id = quote.bgRes),
-                contentDescription = quote.author,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize()
-            )
-
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.35f))
-            )
-
-            Icon(
-                imageVector = Icons.Default.PlayArrow,
-                contentDescription = "Воспроизвести",
-                tint = Color.White.copy(alpha = 0.9f),
-                modifier = Modifier
-                    .size(28.dp)
-                    .align(Alignment.Center)
-            )
+            if (!coverUrl.isNullOrBlank()) {
+                AsyncImage(
+                    model = coverUrl,
+                    contentDescription = book.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            } else {
+                Image(
+                    painter = painterResource(id = R.drawable.book_cover_alchemist),
+                    contentDescription = book.title,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
         }
 
         Spacer(modifier = Modifier.height(6.dp))
 
         Text(
-            text = quote.dateLabel,
+            text = book.title.ifBlank { "Без названия" },
             style = MaterialTheme.typography.labelMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center
+            color = MaterialTheme.colorScheme.onSurface,
+            fontWeight = FontWeight.Medium,
+            textAlign = TextAlign.Center,
+            maxLines = 2
         )
     }
 }

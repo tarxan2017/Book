@@ -47,3 +47,33 @@ data class ChatMessage(
     val text: String = "",
     @ServerTimestamp val timestamp: Date? = null
 )
+
+data class PublicBook(
+    @DocumentId val id: String = "",
+    val title: String = "",
+    val author: String = "",
+    val description: String = "",
+    val category: String = "",
+    val pdfFileId: String = "",
+    val coverFileId: String = "",
+    val videoReviewUrl: String = "",
+    val publisherId: String = "",
+    val publisherName: String = "",
+    @ServerTimestamp val createdAt: Date? = null
+)
+
+// Список категорий для публичной библиотеки
+object BookCategories {
+    val ALL = listOf(
+        "Классика",
+        "Фантастика",
+        "Детектив",
+        "Психология",
+        "Саморазвитие",
+        "Роман",
+        "Нон-фикшн",
+        "Бизнес",
+        "История",
+        "Поэзия"
+    )
+}

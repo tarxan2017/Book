@@ -28,6 +28,7 @@ import com.example.data.datastore.DailyGenerationServiceImpl
 import com.example.data.datastore.PreferencesManager
 import com.example.data.local.AppDatabase
 import com.example.data.remote.GeminiApiClient
+import com.example.data.remote.TelegramBotService
 import com.example.data.tts.RussianTtsManager
 import com.example.repository.LivingPageRepository
 import com.example.ui.components.LivingPageBottomNavBar
@@ -38,6 +39,8 @@ import com.example.ui.screens.GiftAnimationScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.MyBookScreen
 import com.example.ui.screens.OpenBookAnimationScreen
+import com.example.ui.screens.PublicBookDetailScreen
+import com.example.ui.screens.PublicLibraryScreen
 import com.example.ui.screens.ReaderScreen
 import com.example.ui.screens.ReceiveSurpriseScreen
 import com.example.ui.screens.SendSurpriseScreen
@@ -63,6 +66,7 @@ class MainActivity : ComponentActivity() {
         ttsManager = RussianTtsManager(applicationContext)
         val cloudFirestoreService = com.example.data.remote.CloudFirestoreService(applicationContext)
         val authManager = com.example.data.auth.GoogleAuthManager(applicationContext)
+        val telegramBotService = TelegramBotService(applicationContext)
 
         val repository = LivingPageRepository(
             dao = database.livingPageDao(),
@@ -71,7 +75,8 @@ class MainActivity : ComponentActivity() {
             geminiApiClient = geminiApiClient,
             ttsManager = ttsManager,
             cloudFirestoreService = cloudFirestoreService,
-            authManager = authManager
+            authManager = authManager,
+            telegramBotService = telegramBotService
         )
 
         setContent {
@@ -99,12 +104,13 @@ class MainActivity : ComponentActivity() {
                         currentScreen is Screen.Friends ||
                         currentScreen is Screen.Settings
 
-                // Обработка системной кнопки Назад
                 BackHandler(enabled = currentScreen !is Screen.Home) {
                     when (currentScreen) {
                         is Screen.Reader -> mainViewModel.navigateTo(Screen.MyBook)
                         is Screen.BookList -> mainViewModel.navigateTo(Screen.Settings)
                         is Screen.Chat -> mainViewModel.navigateTo(Screen.Friends)
+                        is Screen.PublicLibrary -> mainViewModel.navigateTo(Screen.Home)
+                        is Screen.PublicBookDetail -> mainViewModel.navigateTo(Screen.PublicLibrary)
                         is Screen.VideoPlayer -> mainViewModel.navigateTo(Screen.Home)
                         is Screen.SendSurprise -> mainViewModel.navigateTo(Screen.Friends)
                         is Screen.ReceiveSurprise -> mainViewModel.navigateTo(Screen.Friends)
@@ -113,7 +119,6 @@ class MainActivity : ComponentActivity() {
                     }
                 }
 
-                // Диалог блокировки при исчерпании лимита 5/день
                 if (showLimitDialog) {
                     AlertDialog(
                         onDismissRequest = { mainViewModel.dismissLimitDialog() },
@@ -172,6 +177,11 @@ class MainActivity : ComponentActivity() {
                             is Screen.Friends -> FriendsScreen(viewModel = mainViewModel)
                             is Screen.Settings -> SettingsScreen(viewModel = mainViewModel)
                             is Screen.Reader -> ReaderScreen(viewModel = mainViewModel)
+                            is Screen.PublicLibrary -> PublicLibraryScreen(viewModel = mainViewModel)
+                            is Screen.PublicBookDetail -> PublicBookDetailScreen(
+                                viewModel = mainViewModel,
+                                book = screen.book
+                            )
                             is Screen.Chat -> ChatScreen(
                                 viewModel = mainViewModel,
                                 friendName = screen.friend.displayName.ifBlank { "Читатель" },
