@@ -16,6 +16,7 @@ import com.example.data.remote.model.ChatMessage
 import com.example.data.remote.model.PublicBook
 import com.example.data.remote.model.UserProfile
 import com.example.repository.LivingPageRepository
+import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -54,6 +55,7 @@ sealed class Screen {
     object AdminModerators : Screen()
     object AdminStats : Screen()
     data class AdminBookEdit(val book: PublicBook) : Screen()
+    object NotificationSettings : Screen()
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -137,6 +139,15 @@ class MainViewModel(
     private val _editingBook = MutableStateFlow<PublicBook?>(null)
     val editingBook: StateFlow<PublicBook?> = _editingBook.asStateFlow()
 
+    val notifyBooks: StateFlow<Boolean> = repository.notifyBooks
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    val notifyFriends: StateFlow<Boolean> = repository.notifyFriends
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
+
+    val dndEnabled: StateFlow<Boolean> = repository.dndEnabled
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     init {
         viewModelScope.launch {
             publicBooks.collect { books ->
@@ -154,6 +165,22 @@ class MainViewModel(
                 }
 
                 if (changed) _coverUrls.value = currentMap
+            }
+        }
+
+        // НОВЫЙ БЛОК: Получение FCM-токена при входе пользователя
+        viewModelScope.launch {
+            currentUser.collect { user ->
+                if (user != null) {
+                    FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+                        if (task.isSuccessful) {
+                            val token = task.result
+                            viewModelScope.launch {
+                                repository.saveFcmToken(user.uid, token)
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -347,6 +374,24 @@ class MainViewModel(
         }
     }
 
+    fun setNotifyBooks(enabled: Boolean) {
+        viewModelScope.launch {
+            repository.setNotifyBooks(enabled)
+        }
+    }
+
+    fun setNotifyFriends(enabled: Boolean) {
+        viewModelScope.launch {
+            repository.setNotifyFriends(enabled)
+        }
+    }
+
+    fun setDndEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            repository.setDndEnabled(enabled)
+        }
+    }
+
     fun addModerator(uid: String, name: String) {
         viewModelScope.launch {
             repository.addModerator(uid, name)
@@ -374,7 +419,6 @@ class MainViewModel(
         }
     }
 
-    // ОБНОВЛЕНО: теперь принимает context, чтобы скопировать файл
     fun updateBookDetails(context: Context, book: BookEntity, newTitle: String, newAuthor: String, newCoverUri: String) {
         viewModelScope.launch {
             var finalCoverUri = newCoverUri
@@ -403,7 +447,6 @@ class MainViewModel(
         }
     }
 
-    // НОВОЕ: сохранение прогресса чтения
     fun saveReadingProgress(book: BookEntity, percent: Int) {
         viewModelScope.launch {
             repository.updateBook(book.copy(progressPercent = percent))

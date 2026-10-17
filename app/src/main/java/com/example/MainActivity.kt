@@ -1,11 +1,15 @@
 package com.example
 
+import android.Manifest
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -43,6 +47,7 @@ import com.example.ui.screens.FriendsScreen
 import com.example.ui.screens.GiftAnimationScreen
 import com.example.ui.screens.HomeScreen
 import com.example.ui.screens.MyBookScreen
+import com.example.ui.screens.NotificationSettingsScreen
 import com.example.ui.screens.OpenBookAnimationScreen
 import com.example.ui.screens.PublicBookDetailScreen
 import com.example.ui.screens.PublicLibraryScreen
@@ -96,6 +101,17 @@ class MainActivity : ComponentActivity() {
 
             val snackbarHostState = remember { SnackbarHostState() }
 
+            // НОВОЕ: Запрос разрешения на уведомления
+            val permissionLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.RequestPermission()
+            ) { _ -> }
+
+            LaunchedEffect(Unit) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    permissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                }
+            }
+
             LaunchedEffect(userMessage) {
                 userMessage?.let { msg ->
                     Toast.makeText(this@MainActivity, msg, Toast.LENGTH_SHORT).show()
@@ -120,12 +136,12 @@ class MainActivity : ComponentActivity() {
                         is Screen.SendSurprise -> mainViewModel.navigateTo(Screen.Friends)
                         is Screen.ReceiveSurprise -> mainViewModel.navigateTo(Screen.Friends)
                         is Screen.OpenBookAnimation, is Screen.GiftAnimation -> mainViewModel.navigateTo(Screen.Home)
-                        // === АДМИН-ПАНЕЛЬ ===
                         is Screen.AdminPanel -> mainViewModel.navigateTo(Screen.Settings)
                         is Screen.AdminLibrary -> mainViewModel.navigateTo(Screen.AdminPanel)
                         is Screen.AdminModerators -> mainViewModel.navigateTo(Screen.AdminPanel)
                         is Screen.AdminStats -> mainViewModel.navigateTo(Screen.AdminPanel)
                         is Screen.AdminBookEdit -> mainViewModel.navigateTo(Screen.AdminLibrary)
+                        is Screen.NotificationSettings -> mainViewModel.navigateTo(Screen.Settings)
                         else -> mainViewModel.navigateTo(Screen.Home)
                     }
                 }
@@ -203,7 +219,7 @@ class MainActivity : ComponentActivity() {
                             is Screen.ReceiveSurprise -> ReceiveSurpriseScreen(viewModel = mainViewModel, surprise = screen.surprise)
                             is Screen.OpenBookAnimation -> OpenBookAnimationScreen(viewModel = mainViewModel)
                             is Screen.GiftAnimation -> GiftAnimationScreen(viewModel = mainViewModel)
-                            // === АДМИН-ПАНЕЛЬ ===
+                            
                             is Screen.AdminPanel -> AdminPanelScreen(viewModel = mainViewModel)
                             is Screen.AdminLibrary -> AdminLibraryScreen(viewModel = mainViewModel)
                             is Screen.AdminModerators -> AdminModeratorsScreen(viewModel = mainViewModel)
@@ -212,6 +228,8 @@ class MainActivity : ComponentActivity() {
                                 viewModel = mainViewModel,
                                 book = screen.book
                             )
+                            
+                            is Screen.NotificationSettings -> NotificationSettingsScreen(viewModel = mainViewModel)
                         }
                     }
                 }

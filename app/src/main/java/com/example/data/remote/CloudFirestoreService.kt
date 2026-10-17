@@ -70,6 +70,18 @@ class CloudFirestoreService(
             .await()
     }
 
+    // НОВЫЙ МЕТОД: Сохранение токена FCM для пушей
+    suspend fun saveFcmToken(userId: String, token: String) {
+        if (userId.isBlank() || token.isBlank()) return
+        try {
+            db.collection("users").document(userId)
+                .update("fcmToken", token)
+                .await()
+        } catch (_: Exception) {
+            // Игнорируем, если пользователя еще нет в базе
+        }
+    }
+
     fun observeUserProfile(userId: String): Flow<UserProfile?> = callbackFlow {
         if (userId.isBlank()) {
             trySend(null)
@@ -275,9 +287,6 @@ class CloudFirestoreService(
 
     // === МОДЕРАТОРЫ ===
 
-    /**
-     * Следит за списком модераторов (их UID).
-     */
     fun observeModerators(): Flow<List<String>> = callbackFlow {
         val listener = db.collection("moderators")
             .addSnapshotListener { snapshot, error ->
@@ -292,26 +301,17 @@ class CloudFirestoreService(
         awaitClose { listener.remove() }
     }
 
-    /**
-     * Назначает пользователя модератором.
-     */
     suspend fun addModerator(uid: String, name: String) {
         if (uid.isBlank()) return
         val data = mapOf("name" to name)
         db.collection("moderators").document(uid).set(data).await()
     }
 
-    /**
-     * Снимает пользователя с роли модератора.
-     */
     suspend fun removeModerator(uid: String) {
         if (uid.isBlank()) return
         db.collection("moderators").document(uid).delete().await()
     }
 
-    /**
-     * Проверяет, является ли пользователь модератором (одноразовый запрос).
-     */
     suspend fun isModerator(uid: String): Boolean {
         if (uid.isBlank()) return false
         return try {

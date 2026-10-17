@@ -26,11 +26,17 @@ class PreferencesManager(private val context: Context) {
         private val KEY_VIDEO_API_KEY = stringPreferencesKey("video_api_key")
         private val KEY_READER_FONT_SIZE = floatPreferencesKey("reader_font_size")
         private val KEY_TTS_SPEED = floatPreferencesKey("tts_speed")
+        
+        // НОВЫЕ КЛЮЧИ ДЛЯ УВЕДОМЛЕНИЙ
+        private val KEY_NOTIFY_BOOKS = booleanPreferencesKey("notify_books")
+        private val KEY_NOTIFY_FRIENDS = booleanPreferencesKey("notify_friends")
+        private val KEY_DND_ENABLED = booleanPreferencesKey("dnd_enabled")
+
         const val MAX_DAILY_GENERATIONS = 5
     }
 
     val isDarkTheme: Flow<Boolean> = context.dataStore.data.map { preferences ->
-        preferences[KEY_IS_DARK_THEME] ?: true // По умолчанию темная тема как на экранах 1-6
+        preferences[KEY_IS_DARK_THEME] ?: true
     }
 
     suspend fun setDarkTheme(isDark: Boolean) {
@@ -38,6 +44,40 @@ class PreferencesManager(private val context: Context) {
             preferences[KEY_IS_DARK_THEME] = isDark
         }
     }
+
+    // === УВЕДОМЛЕНИЯ ===
+
+    val notifyBooks: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[KEY_NOTIFY_BOOKS] ?: true
+    }
+
+    suspend fun setNotifyBooks(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_NOTIFY_BOOKS] = enabled
+        }
+    }
+
+    val notifyFriends: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[KEY_NOTIFY_FRIENDS] ?: true
+    }
+
+    suspend fun setNotifyFriends(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_NOTIFY_FRIENDS] = enabled
+        }
+    }
+
+    val dndEnabled: Flow<Boolean> = context.dataStore.data.map { preferences ->
+        preferences[KEY_DND_ENABLED] ?: false
+    }
+
+    suspend fun setDndEnabled(enabled: Boolean) {
+        context.dataStore.edit { preferences ->
+            preferences[KEY_DND_ENABLED] = enabled
+        }
+    }
+
+    // === ОСТАЛЬНОЕ ===
 
     val geminiApiKey: Flow<String> = context.dataStore.data.map { preferences ->
         preferences[KEY_GEMINI_API_KEY] ?: ""
@@ -87,7 +127,7 @@ class PreferencesManager(private val context: Context) {
         val today = getTodayDateString()
         val lastDate = preferences[KEY_LAST_GENERATION_DATE] ?: ""
         val used = if (lastDate == today) {
-            preferences[KEY_GENERATIONS_TODAY] ?: 1 // Из макета 4 из 5 осталось, значит 1 использована
+            preferences[KEY_GENERATIONS_TODAY] ?: 1
         } else {
             0
         }

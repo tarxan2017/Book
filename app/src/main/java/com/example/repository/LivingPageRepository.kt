@@ -58,6 +58,11 @@ class LivingPageRepository(
 
     fun signOut() = authManager.signOut()
 
+    // === ПРОФИЛЬ И УВЕДОМЛЕНИЯ ===
+    
+    suspend fun saveFcmToken(userId: String, token: String) =
+        cloudFirestoreService.saveFcmToken(userId, token)
+
     // === ДРУЗЬЯ (ОБЛАКО) ===
 
     fun observeFriends(userId: String): Flow<List<UserProfile>> =
@@ -72,10 +77,6 @@ class LivingPageRepository(
     suspend fun findUserByUid(uid: String): UserProfile? =
         cloudFirestoreService.findUserByUid(uid)
 
-    /**
-     * Наблюдает за сообществом пользователей (первые 20 зарегистрированных).
-     * Используется в статистике админ-панели.
-     */
     fun observeCommunityUsers(): Flow<List<UserProfile>> =
         cloudFirestoreService.observeCommunityUsers()
 
@@ -136,7 +137,7 @@ class LivingPageRepository(
         dao.updateQuote(quote.copy(isFavorite = !quote.isFavorite))
     }
 
-    // === ДРУЗЬЯ (ЛОКАЛЬНО — старый слой) ===
+    // === ДРУЗЬЯ (ЛОКАЛЬНО) ===
 
     val allFriends: Flow<List<FriendEntity>> = dao.getAllFriends()
 
@@ -186,34 +187,21 @@ class LivingPageRepository(
     suspend fun deletePublicBook(bookId: String) =
         cloudFirestoreService.deletePublicBook(bookId)
 
-    /**
-     * Получает URL обложки для книги в публичной библиотеке (через Telegram).
-     * Используется для отображения картинок через Coil.
-     */
     suspend fun getCoverUrl(coverFileId: String): String? {
         if (coverFileId.isBlank()) return null
         return telegramBotService.getFileUrl(coverFileId)
     }
 
-    /**
-     * Скачивает публичную книгу (PDF) и её обложку, извлекает текст,
-     * сохраняет как обычную книгу в локальную библиотеку пользователя.
-     * Книга автоматически становится текущей.
-     *
-     * @return Result.success(Uri) — Uri PDF, или Result.failure(Throwable)
-     */
     suspend fun downloadPublicBook(context: Context, book: PublicBook): Result<Uri> {
         if (book.pdfFileId.isBlank()) {
             return Result.failure(Exception("У этой книги нет PDF-файла"))
         }
 
-        // 1. Скачиваем PDF
         val pdfUri = telegramBotService.downloadByFileId(
             fileId = book.pdfFileId,
             fileName = "book_${book.id}.pdf"
         ) ?: return Result.failure(Exception("Не удалось скачать PDF"))
 
-        // 2. Скачиваем обложку (если есть)
         val coverUri = if (book.coverFileId.isNotBlank()) {
             telegramBotService.downloadByFileId(
                 fileId = book.coverFileId,
@@ -223,12 +211,10 @@ class LivingPageRepository(
             null
         }
 
-        // 3. Извлекаем текст из PDF
         val pdfParser = PdfParser(context)
         val textResult = pdfParser.extractTextFromPdf(pdfUri)
         val textContent = textResult.getOrNull() ?: ""
 
-        // 4. Сбрасываем флаг isCurrent у других книг и сохраняем новую как текущую
         dao.clearCurrentBook()
 
         val localBook = BookEntity(
@@ -284,6 +270,17 @@ class LivingPageRepository(
 
     val ttsSpeed: Flow<Float> = preferencesManager.ttsSpeed
     suspend fun setTtsSpeed(speed: Float) = preferencesManager.setTtsSpeed(speed)
+
+    // === НАСТРОЙКИ УВЕДОМЛЕНИЙ ===
+
+    val notifyBooks: Flow<Boolean> = preferencesManager.notifyBooks
+    suspend fun setNotifyBooks(enabled: Boolean) = preferencesManager.setNotifyBooks(enabled)
+
+    val notifyFriends: Flow<Boolean> = preferencesManager.notifyFriends
+    suspend fun setNotifyFriends(enabled: Boolean) = preferencesManager.setNotifyFriends(enabled)
+
+    val dndEnabled: Flow<Boolean> = preferencesManager.dndEnabled
+    suspend fun setDndEnabled(enabled: Boolean) = preferencesManager.setDndEnabled(enabled)
 
     // === ИИ ===
 

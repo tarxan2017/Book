@@ -1,11 +1,5 @@
 package com.example.ui.screens
 
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -28,13 +22,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -53,12 +46,14 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.example.R
 import com.example.data.local.entity.QuoteEntity
+import com.example.data.remote.model.BookCategories
 import com.example.data.remote.model.PublicBook
 import com.example.ui.theme.PlayfairDisplayFontFamily
 import com.example.ui.viewmodel.MainViewModel
@@ -72,9 +67,8 @@ fun HomeScreen(
     val todayQuote by viewModel.todayQuote.collectAsStateWithLifecycle()
     val allQuotes by viewModel.allQuotes.collectAsStateWithLifecycle()
     val recentPublicBooks by viewModel.recentPublicBooks.collectAsStateWithLifecycle()
+    val publicBooks by viewModel.publicBooks.collectAsStateWithLifecycle()
     val coverUrls by viewModel.coverUrls.collectAsStateWithLifecycle()
-    val remainingGenerations by viewModel.remainingGenerations.collectAsStateWithLifecycle()
-    val isAiThinking by viewModel.isAiThinking.collectAsStateWithLifecycle()
 
     val scrollState = rememberScrollState()
 
@@ -83,13 +77,14 @@ fun HomeScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
             .verticalScroll(scrollState)
-            .padding(horizontal = 16.dp, vertical = 12.dp)
+            .padding(vertical = 12.dp)
             .testTag("home_screen_content")
     ) {
         // === ШАПКА ===
         Row(
             modifier = Modifier
                 .fillMaxWidth()
+                .padding(horizontal = 16.dp)
                 .padding(top = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
@@ -123,39 +118,6 @@ fun HomeScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(14.dp))
-
-        // === БЕЙДЖ ЛИМИТА ===
-        val isLimitReached = remainingGenerations <= 0
-        Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = if (isLimitReached) MaterialTheme.colorScheme.error.copy(alpha = 0.15f)
-            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
-            modifier = Modifier
-                .clickable { if (isLimitReached) viewModel.generateNewQuote() }
-                .testTag("badge_daily_limit")
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Info,
-                    contentDescription = "Информация",
-                    tint = if (isLimitReached) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = if (isLimitReached) "Лимит генераций исчерпан: 0 из 5 на сегодня"
-                    else "Осталось $remainingGenerations из 5 генераций сегодня",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = if (isLimitReached) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface,
-                    fontWeight = if (isLimitReached) FontWeight.SemiBold else FontWeight.Normal
-                )
-            }
-        }
-
         Spacer(modifier = Modifier.height(16.dp))
 
         // === ГЛАВНАЯ КАРТОЧКА ЦИТАТЫ ===
@@ -171,6 +133,7 @@ fun HomeScreen(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
+                .padding(horizontal = 16.dp)
                 .height(340.dp)
                 .clip(RoundedCornerShape(22.dp))
                 .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), RoundedCornerShape(22.dp))
@@ -249,31 +212,6 @@ fun HomeScreen(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                if (isAiThinking) {
-                    Surface(
-                        shape = RoundedCornerShape(16.dp),
-                        color = Color.Black.copy(alpha = 0.7f),
-                        modifier = Modifier.padding(bottom = 6.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                color = MaterialTheme.colorScheme.primary,
-                                strokeWidth = 2.dp
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "ИИ думает...",
-                                color = Color.White,
-                                style = MaterialTheme.typography.labelMedium
-                            )
-                        }
-                    }
-                }
-
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -325,11 +263,11 @@ fun HomeScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(28.dp))
 
-        // === ПУБЛИЧНАЯ БИБЛИОТЕКА (превью) ===
+        // === ПУБЛИЧНАЯ БИБЛИОТЕКА (ПОСЛЕДНИЕ 5) ===
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -359,7 +297,7 @@ fun HomeScreen(
             Surface(
                 shape = RoundedCornerShape(16.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)
             ) {
                 Text(
                     text = "Пока нет книг в общей библиотеке",
@@ -371,7 +309,7 @@ fun HomeScreen(
         } else {
             LazyRow(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
-                contentPadding = PaddingValues(end = 8.dp),
+                contentPadding = PaddingValues(horizontal = 16.dp),
                 modifier = Modifier.testTag("public_books_row")
             ) {
                 items(recentPublicBooks, key = { it.id }) { book ->
@@ -381,6 +319,57 @@ fun HomeScreen(
                         onClick = { viewModel.openPublicBook(book) }
                     )
                 }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(28.dp))
+
+        // === ПОЛКИ ПО КАТЕГОРИЯМ ===
+        BookCategories.ALL.forEach { category ->
+            val booksInCategory = publicBooks.filter { it.category == category }
+            
+            if (booksInCategory.isNotEmpty()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = category,
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontFamily = PlayfairDisplayFontFamily,
+                            fontWeight = FontWeight.Bold
+                        ),
+                        color = MaterialTheme.colorScheme.onBackground
+                    )
+
+                    Text(
+                        text = "Все",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .clickable { viewModel.openPublicLibrary() }
+                            .padding(4.dp)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    contentPadding = PaddingValues(horizontal = 16.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    items(booksInCategory, key = { it.id }) { book ->
+                        PublicBookPreviewCard(
+                            book = book,
+                            coverUrl = coverUrls[book.coverFileId],
+                            onClick = { viewModel.openPublicBook(book) }
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
             }
         }
 
@@ -398,13 +387,13 @@ private fun PublicBookPreviewCard(
         modifier = Modifier
             .width(110.dp)
             .clickable(onClick = onClick)
-            .testTag("public_book_preview_${book.id}"),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .testTag("public_book_preview_${book.id}")
     ) {
         Box(
             modifier = Modifier
                 .size(width = 110.dp, height = 150.dp)
                 .clip(RoundedCornerShape(14.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
                 .border(
                     1.dp,
                     MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
@@ -419,12 +408,18 @@ private fun PublicBookPreviewCard(
                     modifier = Modifier.fillMaxSize()
                 )
             } else {
-                Image(
-                    painter = painterResource(id = R.drawable.book_cover_alchemist),
-                    contentDescription = book.title,
-                    contentScale = ContentScale.Crop,
-                    modifier = Modifier.fillMaxSize()
-                )
+                // Стильный плейсхолдер вместо Алхимика
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.MenuBook,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f),
+                        modifier = Modifier.size(40.dp)
+                    )
+                }
             }
         }
 
@@ -435,8 +430,8 @@ private fun PublicBookPreviewCard(
             style = MaterialTheme.typography.labelMedium,
             color = MaterialTheme.colorScheme.onSurface,
             fontWeight = FontWeight.Medium,
-            textAlign = TextAlign.Center,
-            maxLines = 2
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }

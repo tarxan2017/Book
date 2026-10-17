@@ -12,6 +12,7 @@ data class UserProfile(
     val photoUrl: String = "",
     val isOnline: Boolean = true,
     val friends: List<String> = emptyList(),
+    val fcmToken: String = "", // НОВОЕ ПОЛЕ: токен для пушей
     @ServerTimestamp val createdAt: Date? = null
 )
 

@@ -22,38 +22,14 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
-    // === БЛОК SIGNINGCONFIGS ЗАКОММЕНТИРОВАН ===
-    // Причина: сборка зависала на задаче :app:writeDebugSign из-за отсутствия
-    // файла my-upload-key.jks. Для отладки (debug) Android Studio использует
-    // стандартный ключ из ~/.android/debug.keystore, который мы уже создали.
-    /*
-    signingConfigs {
-      create("release") {
-        val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
-        storeFile = file(keystorePath)
-        storePassword = System.getenv("STORE_PASSWORD")
-        keyAlias = "upload"
-        keyPassword = System.getenv("KEY_PASSWORD")
-      }
-      create("debugConfig") {
-        storeFile = file("${rootDir}/debug.keystore")
-        storePassword = "android"
-        keyAlias = "androiddebugkey"
-        keyPassword = "android"
-      }
-    }
-    */
-
     buildTypes {
         release {
             isCrunchPngs = false
             isMinifyEnabled = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // signingConfig = signingConfigs.getByName("release") // Отключено, чтобы не искать my-upload-key.jks
         }
         debug {
             isCrunchPngs = false
-            // signingConfig = signingConfigs.getByName("debugConfig") // Отключено, используем стандартный debug-ключ
         }
     }
 
@@ -72,7 +48,6 @@ android {
     }
 }
 
-// Configure the Secrets Gradle Plugin to use .env and .env.example files
 secrets {
     propertiesFileName = ".env"
     defaultPropertiesFileName = ".env.example"
@@ -106,6 +81,10 @@ dependencies {
 
     implementation(libs.firebase.firestore)
     implementation(libs.firebase.auth)
+    
+    // НОВАЯ СТРОКА: Firebase Cloud Messaging (FCM)
+    implementation("com.google.firebase:firebase-messaging")
+
     implementation(libs.androidx.credentials)
     implementation(libs.androidx.credentials.play.services)
     implementation(libs.googleid)
