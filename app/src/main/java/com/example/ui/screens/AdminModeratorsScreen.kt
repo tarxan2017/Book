@@ -56,6 +56,8 @@ fun AdminModeratorsScreen(
     modifier: Modifier = Modifier
 ) {
     val moderators by viewModel.moderators.collectAsStateWithLifecycle()
+    val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
+    val currentUid = currentUser?.uid
 
     var uidToRemove by remember { mutableStateOf<String?>(null) }
 
@@ -132,6 +134,7 @@ fun AdminModeratorsScreen(
                     ModeratorCard(
                         uid = uid,
                         isAdmin = uid == ADMIN_UID,
+                        isSelf = uid == currentUid,
                         onRemove = { uidToRemove = uid }
                     )
                 }
@@ -194,6 +197,7 @@ fun AdminModeratorsScreen(
 private fun ModeratorCard(
     uid: String,
     isAdmin: Boolean,
+    isSelf: Boolean,
     onRemove: () -> Unit
 ) {
     Surface(
@@ -251,6 +255,20 @@ private fun ModeratorCard(
                                 modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                             )
                         }
+                    } else if (isSelf) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+                        ) {
+                            Text(
+                                text = "Вы",
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
                     }
                 }
 
@@ -266,8 +284,8 @@ private fun ModeratorCard(
                 )
             }
 
-            // Кнопка снять — только для не-админов
-            if (!isAdmin) {
+            // Кнопка снять — только для не-админов и не себя
+            if (!isAdmin && !isSelf) {
                 IconButton(
                     onClick = onRemove,
                     modifier = Modifier
