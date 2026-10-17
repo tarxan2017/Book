@@ -22,13 +22,14 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-const val ADMIN_UID = "AcWTQ3Gf3FYquad3wfSk1CcEvcl3"
+const val ADMIN_UID = "AcWTQ3Gf3FYquad3wfSk1CcEvcI3"
 
 sealed class Screen {
     object Home : Screen()
@@ -45,6 +46,13 @@ sealed class Screen {
     data class Chat(val friend: UserProfile) : Screen()
     object OpenBookAnimation : Screen()
     object GiftAnimation : Screen()
+
+    // === АДМИН-ПАНЕЛЬ ===
+    object AdminPanel : Screen()
+    object AdminLibrary : Screen()
+    object AdminModerators : Screen()
+    object AdminStats : Screen()
+    data class AdminBookEdit(val book: PublicBook) : Screen()
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -84,6 +92,16 @@ class MainViewModel(
     val moderators: StateFlow<List<String>> = repository.observeModerators()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    /**
+     * Реактивный признак того, что текущий пользователь может управлять
+     * публичными книгами: админ ИЛИ назначенный модератор.
+     */
+    val canManageBooks: StateFlow<Boolean> = combine(
+        isAdmin, moderators, currentUser
+    ) { admin, mods, user ->
+        admin || (user != null && mods.contains(user.uid))
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
     // === ДРУЗЬЯ ИЗ ОБЛАКА ===
 
     val cloudFriends: StateFlow<List<UserProfile>> = currentUser
@@ -91,6 +109,9 @@ class MainViewModel(
             if (user == null) flowOf(emptyList())
             else repository.observeFriends(user.uid)
         }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val communityUsers: StateFlow<List<UserProfile>> = repository.observeCommunityUsers()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     private val _foundUser = MutableStateFlow<UserProfile?>(null)
@@ -115,6 +136,17 @@ class MainViewModel(
 
     private val _isDownloading = MutableStateFlow(false)
     val isDownloading: StateFlow<Boolean> = _isDownloading.asStateFlow()
+
+    // === АДМИН-ФЛАГИ ===
+
+    private val _isDeleting = MutableStateFlow(false)
+    val isDeleting: StateFlow<Boolean> = _isDeleting.asStateFlow()
+
+    private val _isUpdatingBook = MutableStateFlow(false)
+    val isUpdatingBook: StateFlow<Boolean> = _isUpdatingBook.asStateFlow()
+
+    private val _editingBook = MutableStateFlow<PublicBook?>(null)
+    val editingBook: StateFlow<PublicBook?> = _editingBook.asStateFlow()
 
     init {
         viewModelScope.launch {
@@ -363,6 +395,79 @@ class MainViewModel(
         viewModelScope.launch {
             repository.deleteBook(book)
             _userMessage.value = "Книга удалена: ${book.title}"
+        }
+    }
+
+    // === АДМИН-ПАНЕЛЬ ===
+
+    fun openAdminPanel() {
+        _currentScreen.value = Screen.AdminPanel
+    }
+
+    fun openAdminLibrary() {
+        _currentScreen.value = Screen.AdminLibrary
+    }
+
+    fun openAdminModerators() {
+        _currentScreen.value = Screen.AdminModerators
+    }
+
+    fun openAdminStats() {
+        _currentScreen.value = Screen.AdminStats
+    }
+
+    fun openBookEditor(book: PublicBook) {
+        _editingBook.value = book
+        _currentScreen.value = Screen.AdminBookEdit(book)
+    }
+
+    /**
+     * Удаляет книгу из общей библиотеки. Доступно админу и модераторам.
+     * После успешного удаления возвращает пользователя в «Управление библиотекой».
+     */
+    fun deletePublicBook(bookId: String) {
+        if (bookId.isBlank()) return
+        if (!canManageBooks.value) {
+            _userMessage.value = "Недостаточно прав для удаления"
+            return
+        }
+
+        viewModelScope.launch {
+            _isDeleting.value = true
+            try {
+                repository.deletePublicBook(bookId)
+                _userMessage.value = "Книга удалена из общей библиотеки"
+                _currentScreen.value = Screen.AdminLibrary
+            } catch (e: Exception) {
+                _userMessage.value = "Ошибка удаления: ${e.localizedMessage}"
+            } finally {
+                _isDeleting.value = false
+            }
+        }
+    }
+
+    /**
+     * Обновляет метаданные книги (название, автора, описание, категорию, видео-ссылку).
+     * Обложка обновляется отдельно (через Telegram).
+     */
+    fun updatePublicBook(book: PublicBook) {
+        if (book.id.isBlank()) return
+        if (!canManageBooks.value) {
+            _userMessage.value = "Недостаточно прав для редактирования"
+            return
+        }
+
+        viewModelScope.launch {
+            _isUpdatingBook.value = true
+            try {
+                repository.updatePublicBook(book)
+                _editingBook.value = book
+                _userMessage.value = "Изменения сохранены"
+            } catch (e: Exception) {
+                _userMessage.value = "Ошибка обновления: ${e.localizedMessage}"
+            } finally {
+                _isUpdatingBook.value = false
+            }
         }
     }
 

@@ -6,7 +6,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -22,10 +21,10 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
+import androidx.compose.material.icons.filled.AdminPanelSettings
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Book
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material.icons.filled.Copyright
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Notifications
@@ -76,13 +75,13 @@ fun SettingsScreen(
     val isRussianSupported by viewModel.isRussianSupported.collectAsStateWithLifecycle()
     val remainingGenerations by viewModel.remainingGenerations.collectAsStateWithLifecycle()
     val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
+    val canManageBooks by viewModel.canManageBooks.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
 
     var inputGeminiKey by remember(geminiKey) { mutableStateOf(geminiKey) }
     var inputVideoKey by remember(videoKey) { mutableStateOf(videoKey) }
     var showAiDetails by remember { mutableStateOf(true) }
-    var showCopyrightDialog by remember { mutableStateOf(false) }
 
     val scrollState = rememberScrollState()
 
@@ -332,12 +331,14 @@ fun SettingsScreen(
                     onClick = { showAiDetails = !showAiDetails }
                 )
 
-                SettingsMenuRow(
-                    icon = Icons.Default.Copyright,
-                    title = "Авторские права на книги",
-                    subtitle = "Правовая информация",
-                    onClick = { showCopyrightDialog = !showCopyrightDialog }
-                )
+                if (canManageBooks) {
+                    SettingsMenuRow(
+                        icon = Icons.Default.AdminPanelSettings,
+                        title = "Управление администратором",
+                        subtitle = "Библиотека, модераторы, статистика",
+                        onClick = { viewModel.navigateTo(Screen.AdminPanel) }
+                    )
+                }
             }
         }
 
@@ -538,30 +539,6 @@ fun SettingsScreen(
                             }
                         }
                     }
-                }
-            }
-        }
-
-        if (showCopyrightDialog) {
-            Spacer(modifier = Modifier.height(14.dp))
-            Surface(
-                shape = RoundedCornerShape(16.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Юридическая информация и авторские права",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Text(
-                        text = "Произведения и цитаты классиков используются исключительно в познавательных и культурных целях (общественное достояние и добросовестное цитирование по ст. 1274 ГК РФ). Все права на зарегистрированные товарные знаки принадлежат их правообладателям.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
                 }
             }
         }

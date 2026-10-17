@@ -72,6 +72,13 @@ class LivingPageRepository(
     suspend fun findUserByUid(uid: String): UserProfile? =
         cloudFirestoreService.findUserByUid(uid)
 
+    /**
+     * Наблюдает за сообществом пользователей (первые 20 зарегистрированных).
+     * Используется в статистике админ-панели.
+     */
+    fun observeCommunityUsers(): Flow<List<UserProfile>> =
+        cloudFirestoreService.observeCommunityUsers()
+
     // === ЧАТ ===
 
     suspend fun sendMessage(fromId: String, toId: String, text: String) =

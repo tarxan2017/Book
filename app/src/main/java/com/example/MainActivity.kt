@@ -32,6 +32,11 @@ import com.example.data.remote.TelegramBotService
 import com.example.data.tts.RussianTtsManager
 import com.example.repository.LivingPageRepository
 import com.example.ui.components.LivingPageBottomNavBar
+import com.example.ui.screens.AdminBookEditScreen
+import com.example.ui.screens.AdminLibraryScreen
+import com.example.ui.screens.AdminModeratorsScreen
+import com.example.ui.screens.AdminPanelScreen
+import com.example.ui.screens.AdminStatsScreen
 import com.example.ui.screens.BookListScreen
 import com.example.ui.screens.ChatScreen
 import com.example.ui.screens.FriendsScreen
@@ -115,6 +120,12 @@ class MainActivity : ComponentActivity() {
                         is Screen.SendSurprise -> mainViewModel.navigateTo(Screen.Friends)
                         is Screen.ReceiveSurprise -> mainViewModel.navigateTo(Screen.Friends)
                         is Screen.OpenBookAnimation, is Screen.GiftAnimation -> mainViewModel.navigateTo(Screen.Home)
+                        // === АДМИН-ПАНЕЛЬ ===
+                        is Screen.AdminPanel -> mainViewModel.navigateTo(Screen.Settings)
+                        is Screen.AdminLibrary -> mainViewModel.navigateTo(Screen.AdminPanel)
+                        is Screen.AdminModerators -> mainViewModel.navigateTo(Screen.AdminPanel)
+                        is Screen.AdminStats -> mainViewModel.navigateTo(Screen.AdminPanel)
+                        is Screen.AdminBookEdit -> mainViewModel.navigateTo(Screen.AdminLibrary)
                         else -> mainViewModel.navigateTo(Screen.Home)
                     }
                 }
@@ -192,6 +203,15 @@ class MainActivity : ComponentActivity() {
                             is Screen.ReceiveSurprise -> ReceiveSurpriseScreen(viewModel = mainViewModel, surprise = screen.surprise)
                             is Screen.OpenBookAnimation -> OpenBookAnimationScreen(viewModel = mainViewModel)
                             is Screen.GiftAnimation -> GiftAnimationScreen(viewModel = mainViewModel)
+                            // === АДМИН-ПАНЕЛЬ ===
+                            is Screen.AdminPanel -> AdminPanelScreen(viewModel = mainViewModel)
+                            is Screen.AdminLibrary -> AdminLibraryScreen(viewModel = mainViewModel)
+                            is Screen.AdminModerators -> AdminModeratorsScreen(viewModel = mainViewModel)
+                            is Screen.AdminStats -> AdminStatsScreen(viewModel = mainViewModel)
+                            is Screen.AdminBookEdit -> AdminBookEditScreen(
+                                viewModel = mainViewModel,
+                                book = screen.book
+                            )
                         }
                     }
                 }
