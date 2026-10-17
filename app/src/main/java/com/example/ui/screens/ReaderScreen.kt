@@ -13,15 +13,14 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.VolumeUp
@@ -38,6 +37,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -64,7 +64,6 @@ import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
 import kotlin.math.min
 
-// Темы для читалки
 private data class ReaderTheme(
     val name: String,
     val bg: Color,
@@ -88,39 +87,39 @@ fun ReaderScreen(
     val isSpeaking by viewModel.isTtsSpeaking.collectAsStateWithLifecycle()
 
     val book = currentBook ?: BookEntity(
-        id = 1, title = "Алхимик", author = "Пауло Коэльо", coverRes = 0,
+        id = 1, title = "Книга не выбрана", author = "", coverRes = 0,
         totalChapters = 1, currentChapter = 1, progressPercent = 0,
         textContent = "Текст книги не загружен."
     )
 
-    // Состояние читалки
     var currentTheme by remember { mutableStateOf(themeDark) }
     var currentFontFamily by remember { mutableStateOf<FontFamily>(InterFontFamily) }
-    var showSettingsSheet by remember { mutableStateOf(false) }
     
-    // Состояние поиска
-    var searchQuery by remember { mutableStateOf("") }
+    var showSettingsSheet by remember { mutableStateOf(false) }
+    var showSearchSheet by remember { mutableStateOf(false) }
+    var showTocSheet by remember { mutableStateOf(false) }
 
-    val coroutineScope = rememberCoroutineScope()
-
-    // Разбивка текста на страницы
     val pages = remember(book.textContent, fontSize) {
         if (book.textContent.isBlank()) listOf("Книга пуста")
         else chunkText(book.textContent, chunkSize = (1200 * (17f / fontSize)).toInt())
     }
 
-    val pagerState = rememberPagerState(pageCount = { pages.size })
-    
-    // Результаты поиска (индекс страницы + отрывок)
-    val searchResults = remember(searchQuery, pages) {
-        if (searchQuery.length < 2) emptyList()
-        else pages.mapIndexedNotNull { index, text ->
-            if (text.contains(searchQuery, ignoreCase = true)) {
-                val snippetStart = maxOf(0, text.indexOf(searchQuery, ignoreCase = true) - 20)
-                val snippetEnd = minOf(text.length, snippetStart + 80)
-                val snippet = "..." + text.substring(snippetStart, snippetEnd).replace("\n", " ") + "..."
-                Pair(index, snippet)
-            } else null
+    // Вычисляем стартовую страницу на основе сохраненного прогресса (в процентах)
+    val initialPage = remember {
+        if (book.progressPercent > 0 && pages.isNotEmpty()) {
+            val calculatedPage = (pages.size * (book.progressPercent / 100f)).toInt()
+            calculatedPage.coerceIn(0, pages.size - 1)
+        } else 0
+    }
+
+    val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { pages.size })
+    val coroutineScope = rememberCoroutineScope()
+
+    // Сохраняем прогресс при каждом перелистывании
+    LaunchedEffect(pagerState.currentPage) {
+        val progress = ((pagerState.currentPage + 1).toFloat() / pages.size * 100).toInt()
+        if (progress != book.progressPercent) {
+            viewModel.saveReadingProgress(book, progress)
         }
     }
 
@@ -128,10 +127,8 @@ fun ReaderScreen(
         modifier = modifier
             .fillMaxSize()
             .background(currentTheme.bg)
-            .statusBarsPadding() // Чтобы не залезало под статус-бар
             .testTag("reader_screen")
     ) {
-        // === ОСНОВНОЙ ТЕКСТ (СВАЙПЫ) ===
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize()
@@ -141,20 +138,16 @@ fun ReaderScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(horizontal = 24.dp, vertical = 40.dp)
+                    .padding(horizontal = 24.dp, vertical = 70.dp)
                     .graphicsLayer {
-                        // 3D-эффект
                         rotationY = pageOffset * 25f
                         cameraDistance = 12f * density
                         alpha = 1f - pageOffset.absoluteValue * 0.4f
                     }
                     .pointerInput(Unit) {
-                        detectTapGestures(
-                            onTap = { showSettingsSheet = true }
-                        )
+                        detectTapGestures(onTap = { showSettingsSheet = true })
                     }
             ) {
-                // Название книги убрано, сразу идет текст
                 Text(
                     text = pages[page],
                     style = MaterialTheme.typography.bodyLarge.copy(
@@ -171,7 +164,7 @@ fun ReaderScreen(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(top = 8.dp, start = 8.dp, end = 8.dp),
+                .padding(top = 40.dp, start = 8.dp, end = 8.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -182,9 +175,6 @@ fun ReaderScreen(
                     tint = currentTheme.text.copy(alpha = 0.7f)
                 )
             }
-
-            // Название убрано, чтобы не дублировалось. Просто пустое место.
-            Spacer(modifier = Modifier.weight(1f))
 
             IconButton(onClick = {
                 val textToRead = pages.getOrNull(pagerState.currentPage) ?: ""
@@ -203,10 +193,9 @@ fun ReaderScreen(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .fillMaxWidth()
-                .padding(bottom = 24.dp, start = 24.dp, end = 24.dp)
+                .padding(bottom = 30.dp, start = 24.dp, end = 24.dp)
         ) {
             val progress = ((pagerState.currentPage + 1).toFloat() / pages.size * 100).toInt()
-            
             Text(
                 text = "$progress% (${pagerState.currentPage + 1} из ${pages.size})",
                 style = MaterialTheme.typography.labelMedium,
@@ -221,10 +210,7 @@ fun ReaderScreen(
     if (showSettingsSheet) {
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(
-            onDismissRequest = { 
-                showSettingsSheet = false 
-                searchQuery = "" // Сбрасываем поиск при закрытии
-            },
+            onDismissRequest = { showSettingsSheet = false },
             sheetState = sheetState,
             containerColor = currentTheme.surface
         ) {
@@ -234,149 +220,197 @@ fun ReaderScreen(
                     .padding(horizontal = 24.dp)
                     .padding(bottom = 40.dp)
             ) {
-                // --- ПОИСК ---
-                OutlinedTextField(
-                    value = searchQuery,
-                    onValueChange = { searchQuery = it },
-                    placeholder = { Text("Поиск по тексту...", color = currentTheme.text.copy(alpha = 0.5f)) },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = currentTheme.accent) },
-                    singleLine = true,
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = currentTheme.accent,
-                        unfocusedBorderColor = currentTheme.text.copy(alpha = 0.2f),
-                        focusedContainerColor = currentTheme.bg.copy(alpha = 0.5f),
-                        unfocusedContainerColor = currentTheme.bg.copy(alpha = 0.5f),
-                        focusedTextColor = currentTheme.text,
-                        unfocusedTextColor = currentTheme.text
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Text("Тема", color = currentTheme.text, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    ThemeChip(themeWhite, currentTheme.name) { currentTheme = themeWhite }
+                    ThemeChip(themeSepia, currentTheme.name) { currentTheme = themeSepia }
+                    ThemeChip(themeDark, currentTheme.name) { currentTheme = themeDark }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("Размер", color = currentTheme.text, fontWeight = FontWeight.Bold)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Button(
+                            onClick = { if (fontSize > 12f) viewModel.setReaderFontSize(fontSize - 1f) },
+                            colors = ButtonDefaults.buttonColors(containerColor = currentTheme.bg),
+                            modifier = Modifier.size(40.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
+                        ) { Text("-", color = currentTheme.text, fontSize = 20.sp) }
+                        
+                        Text(
+                            text = fontSize.toInt().toString(),
+                            color = currentTheme.text,
+                            modifier = Modifier.padding(horizontal = 16.dp)
+                        )
+                        
+                        Button(
+                            onClick = { if (fontSize < 32f) viewModel.setReaderFontSize(fontSize + 1f) },
+                            colors = ButtonDefaults.buttonColors(containerColor = currentTheme.bg),
+                            modifier = Modifier.size(40.dp),
+                            contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
+                        ) { Text("+", color = currentTheme.text, fontSize = 20.sp) }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(24.dp))
+
+                Text("Шрифт", color = currentTheme.text, fontWeight = FontWeight.Bold)
+                Spacer(modifier = Modifier.height(12.dp))
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    FontChip("Inter", currentFontFamily == InterFontFamily, currentTheme) { currentFontFamily = InterFontFamily }
+                    FontChip("Playfair", currentFontFamily == PlayfairDisplayFontFamily, currentTheme) { currentFontFamily = PlayfairDisplayFontFamily }
+                    FontChip("Serif", currentFontFamily == FontFamily.Serif, currentTheme) { currentFontFamily = FontFamily.Serif }
+                }
+
+                Spacer(modifier = Modifier.height(30.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        IconButton(onClick = { 
+                            showSettingsSheet = false
+                            showSearchSheet = true 
+                        }) {
+                            Icon(Icons.Default.Search, "Поиск", tint = currentTheme.accent, modifier = Modifier.size(28.dp))
+                        }
+                        Text("Поиск", color = currentTheme.text, style = MaterialTheme.typography.labelSmall)
+                    }
+                    
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        IconButton(onClick = { 
+                            showSettingsSheet = false
+                            showTocSheet = true 
+                        }) {
+                            Icon(Icons.AutoMirrored.Filled.List, "Оглавление", tint = currentTheme.accent, modifier = Modifier.size(28.dp))
+                        }
+                        Text("Страницы", color = currentTheme.text, style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
+        }
+    }
+
+    // === ШТОРКА ПОИСКА ===
+    if (showSearchSheet) {
+        var query by remember { mutableStateOf("") }
+        val searchResults = remember(query) {
+            if (query.length < 2) emptyList()
+            else pages.mapIndexedNotNull { index, pageText ->
+                if (pageText.contains(query, ignoreCase = true)) index else null
+            }
+        }
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+
+        ModalBottomSheet(
+            onDismissRequest = { showSearchSheet = false },
+            sheetState = sheetState,
+            containerColor = currentTheme.surface
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 40.dp)
+            ) {
+                Text("Поиск по тексту", color = currentTheme.text, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                Spacer(modifier = Modifier.height(16.dp))
                 
+                OutlinedTextField(
+                    value = query,
+                    onValueChange = { query = it },
+                    placeholder = { Text("Введите слово...", color = currentTheme.text.copy(alpha = 0.5f)) },
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = currentTheme.text,
+                        unfocusedTextColor = currentTheme.text,
+                        focusedBorderColor = currentTheme.accent,
+                        unfocusedBorderColor = currentTheme.text.copy(alpha = 0.3f)
+                    ),
+                    singleLine = true
+                )
+
                 Spacer(modifier = Modifier.height(16.dp))
 
-                // Если есть поисковый запрос — показываем результаты
-                if (searchQuery.length >= 2) {
-                    if (searchResults.isEmpty()) {
-                        Text("Ничего не найдено", color = currentTheme.text.copy(alpha = 0.6f))
-                    } else {
-                        LazyVerticalGrid(
-                            columns = GridCells.Fixed(1),
-                            modifier = Modifier.height(200.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            items(searchResults.size) { i ->
-                                val (pageIndex, snippet) = searchResults[i]
-                                Surface(
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = currentTheme.bg,
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clickable {
-                                            coroutineScope.launch {
-                                                pagerState.animateScrollToPage(pageIndex)
-                                                showSettingsSheet = false
-                                                searchQuery = ""
-                                            }
-                                        }
-                                ) {
-                                    Column(modifier = Modifier.padding(12.dp)) {
-                                        Text("Страница ${pageIndex + 1}", color = currentTheme.accent, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-                                        Text(snippet, color = currentTheme.text, fontSize = 14.sp, maxLines = 2)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    Spacer(modifier = Modifier.height(24.dp))
-                } else {
-                    // --- ОГЛАВЛЕНИЕ (СЕТКА СТРАНИЦ) ---
-                    Text("Перейти на страницу", color = currentTheme.text, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(12.dp))
-                    
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(6),
-                        modifier = Modifier.height(120.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(pages.size) { index ->
-                            val isCurrent = pagerState.currentPage == index
+                if (query.length >= 2 && searchResults.isEmpty()) {
+                    Text("Ничего не найдено", color = currentTheme.text, modifier = Modifier.padding(8.dp))
+                } else if (searchResults.isNotEmpty()) {
+                    LazyColumn(modifier = Modifier.height(250.dp)) {
+                        items(searchResults) { pageIndex ->
                             Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = if (isCurrent) currentTheme.accent else currentTheme.bg,
+                                color = Color.Transparent,
                                 modifier = Modifier
-                                    .size(40.dp)
+                                    .fillMaxWidth()
                                     .clickable {
-                                        coroutineScope.launch {
-                                            pagerState.animateScrollToPage(index)
-                                            showSettingsSheet = false
-                                        }
+                                        showSearchSheet = false
+                                        coroutineScope.launch { pagerState.scrollToPage(pageIndex) }
                                     }
+                                    .padding(vertical = 12.dp)
                             ) {
-                                Box(contentAlignment = Alignment.Center) {
+                                Column {
+                                    Text("Страница ${pageIndex + 1}", color = currentTheme.accent, fontWeight = FontWeight.Bold)
                                     Text(
-                                        text = "${index + 1}",
-                                        color = if (isCurrent) Color.White else currentTheme.text,
-                                        fontSize = 12.sp
+                                        text = pages[pageIndex].take(60) + "...",
+                                        color = currentTheme.text.copy(alpha = 0.7f),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 2
                                     )
                                 }
                             }
                         }
                     }
+                }
+            }
+        }
+    }
 
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    // --- ТЕМЫ ---
-                    Text("Тема оформления", color = currentTheme.text, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        ThemeChip(themeWhite, currentTheme.name) { currentTheme = themeWhite }
-                        ThemeChip(themeSepia, currentTheme.name) { currentTheme = themeSepia }
-                        ThemeChip(themeDark, currentTheme.name) { currentTheme = themeDark }
-                    }
-
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    // --- РАЗМЕР ШРИФТА ---
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("Размер шрифта", color = currentTheme.text, fontWeight = FontWeight.Bold)
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Button(
-                                onClick = { if (fontSize > 12f) viewModel.setReaderFontSize(fontSize - 1f) },
-                                colors = ButtonDefaults.buttonColors(containerColor = currentTheme.bg),
-                                modifier = Modifier.size(40.dp),
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
-                            ) { Text("-", color = currentTheme.text, fontSize = 20.sp) }
-                            
-                            Text(
-                                text = fontSize.toInt().toString(),
-                                color = currentTheme.text,
-                                modifier = Modifier.padding(horizontal = 16.dp)
-                            )
-                            
-                            Button(
-                                onClick = { if (fontSize < 32f) viewModel.setReaderFontSize(fontSize + 1f) },
-                                colors = ButtonDefaults.buttonColors(containerColor = currentTheme.bg),
-                                modifier = Modifier.size(40.dp),
-                                contentPadding = androidx.compose.foundation.layout.PaddingValues(0.dp)
-                            ) { Text("+", color = currentTheme.text, fontSize = 20.sp) }
+    // === ШТОРКА ОГЛАВЛЕНИЯ ===
+    if (showTocSheet) {
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { showTocSheet = false },
+            sheetState = sheetState,
+            containerColor = currentTheme.surface
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp)
+                    .padding(bottom = 40.dp)
+            ) {
+                Text("Выбор страницы", color = currentTheme.text, fontWeight = FontWeight.Bold, fontSize = 20.sp)
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                LazyColumn(modifier = Modifier.height(400.dp)) {
+                    items(pages.size) { pageIndex ->
+                        Surface(
+                            color = if (pageIndex == pagerState.currentPage) currentTheme.accent.copy(alpha = 0.2f) else Color.Transparent,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable {
+                                    showTocSheet = false
+                                    coroutineScope.launch { pagerState.scrollToPage(pageIndex) }
+                                }
+                                .padding(vertical = 12.dp, horizontal = 8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text("Страница ${pageIndex + 1}", color = currentTheme.text)
+                                if (pageIndex == pagerState.currentPage) {
+                                    Text("Текущая", color = currentTheme.accent, style = MaterialTheme.typography.labelSmall)
+                                }
+                            }
                         }
-                    }
-
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    // --- ШРИФТ ---
-                    Text("Шрифт", color = currentTheme.text, fontWeight = FontWeight.Bold)
-                    Spacer(modifier = Modifier.height(12.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        FontChip("Inter", currentFontFamily == InterFontFamily, currentTheme) { currentFontFamily = InterFontFamily }
-                        FontChip("Playfair", currentFontFamily == PlayfairDisplayFontFamily, currentTheme) { currentFontFamily = PlayfairDisplayFontFamily }
-                        FontChip("Serif", currentFontFamily == FontFamily.Serif, currentTheme) { currentFontFamily = FontFamily.Serif }
                     }
                 }
             }
@@ -421,7 +455,6 @@ private fun FontChip(name: String, isSelected: Boolean, theme: ReaderTheme, onCl
     }
 }
 
-// Функция разбивки текста на страницы
 private fun chunkText(text: String, chunkSize: Int): List<String> {
     val chunks = mutableListOf<String>()
     var start = 0

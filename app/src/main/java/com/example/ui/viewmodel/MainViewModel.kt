@@ -28,6 +28,8 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.io.File
+import java.io.FileOutputStream
 
 const val ADMIN_UID = "AcWTQ3Gf3FYquad3wfSk1CcEvcI3"
 
@@ -47,7 +49,6 @@ sealed class Screen {
     object OpenBookAnimation : Screen()
     object GiftAnimation : Screen()
 
-    // === АДМИН-ПАНЕЛЬ ===
     object AdminPanel : Screen()
     object AdminLibrary : Screen()
     object AdminModerators : Screen()
@@ -83,8 +84,6 @@ class MainViewModel(
 
     val currentUser: StateFlow<com.google.firebase.auth.FirebaseUser?> = repository.currentUser
 
-    // === АДМИН ===
-
     val isAdmin: StateFlow<Boolean> = currentUser
         .map { user -> user?.uid == ADMIN_UID }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
@@ -92,17 +91,11 @@ class MainViewModel(
     val moderators: StateFlow<List<String>> = repository.observeModerators()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    /**
-     * Реактивный признак того, что текущий пользователь может управлять
-     * публичными книгами: админ ИЛИ назначенный модератор.
-     */
     val canManageBooks: StateFlow<Boolean> = combine(
         isAdmin, moderators, currentUser
     ) { admin, mods, user ->
         admin || (user != null && mods.contains(user.uid))
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
-
-    // === ДРУЗЬЯ ИЗ ОБЛАКА ===
 
     val cloudFriends: StateFlow<List<UserProfile>> = currentUser
         .flatMapLatest { user ->
@@ -120,8 +113,6 @@ class MainViewModel(
     private val _isSearchingFriend = MutableStateFlow(false)
     val isSearchingFriend: StateFlow<Boolean> = _isSearchingFriend.asStateFlow()
 
-    // === ПУБЛИЧНАЯ БИБЛИОТЕКА ===
-
     val publicBooks: StateFlow<List<PublicBook>> = repository.observePublicBooks()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -136,8 +127,6 @@ class MainViewModel(
 
     private val _isDownloading = MutableStateFlow(false)
     val isDownloading: StateFlow<Boolean> = _isDownloading.asStateFlow()
-
-    // === АДМИН-ФЛАГИ ===
 
     private val _isDeleting = MutableStateFlow(false)
     val isDeleting: StateFlow<Boolean> = _isDeleting.asStateFlow()
@@ -196,8 +185,6 @@ class MainViewModel(
         }
     }
 
-    // === ДРУЗЬЯ ===
-
     fun findUserByUid(uid: String) {
         if (uid.isBlank()) return
         viewModelScope.launch {
@@ -226,8 +213,6 @@ class MainViewModel(
             _userMessage.value = "Друг добавлен!"
         }
     }
-
-    // === ЧАТ ===
 
     private val _chatFriend = MutableStateFlow<UserProfile?>(null)
     val chatFriend: StateFlow<UserProfile?> = _chatFriend.asStateFlow()
@@ -265,8 +250,6 @@ class MainViewModel(
         }
     }
 
-    // === АВТОРИЗАЦИЯ ===
-
     fun signInWithGoogle(context: Context) {
         viewModelScope.launch {
             val result = repository.signInWithGoogle(context)
@@ -282,8 +265,6 @@ class MainViewModel(
         repository.signOut()
         _userMessage.value = "Вы вышли из профиля"
     }
-
-    // === ЛИМИТ ===
 
     val dailyUsage: StateFlow<DailyUsage> = repository.dailyUsage
         .stateIn(
@@ -366,8 +347,6 @@ class MainViewModel(
         }
     }
 
-    // === МОДЕРАТОРЫ ===
-
     fun addModerator(uid: String, name: String) {
         viewModelScope.launch {
             repository.addModerator(uid, name)
@@ -382,12 +361,9 @@ class MainViewModel(
         }
     }
 
-    // === КНИГИ ===
-
     fun setCurrentBook(book: BookEntity) {
         viewModelScope.launch {
             repository.setCurrentBook(book)
-            _userMessage.value = "Текущая книга: ${book.title}"
         }
     }
 
@@ -398,40 +374,58 @@ class MainViewModel(
         }
     }
 
-    // === АДМИН-ПАНЕЛЬ ===
+    // ОБНОВЛЕНО: теперь принимает context, чтобы скопировать файл
+    fun updateBookDetails(context: Context, book: BookEntity, newTitle: String, newAuthor: String, newCoverUri: String) {
+        viewModelScope.launch {
+            var finalCoverUri = newCoverUri
+            
+            if (newCoverUri.isNotBlank() && newCoverUri.startsWith("content://")) {
+                try {
+                    val inputStream = context.contentResolver.openInputStream(Uri.parse(newCoverUri))
+                    val file = File(context.filesDir, "cover_${book.id}_${System.currentTimeMillis()}.jpg")
+                    val outputStream = FileOutputStream(file)
+                    inputStream?.copyTo(outputStream)
+                    inputStream?.close()
+                    outputStream.close()
+                    finalCoverUri = file.absolutePath
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
 
-    fun openAdminPanel() {
-        _currentScreen.value = Screen.AdminPanel
+            val updated = book.copy(
+                title = newTitle.trim().ifBlank { "Без названия" },
+                author = newAuthor.trim().ifBlank { "Неизвестный автор" },
+                coverUri = finalCoverUri
+            )
+            repository.updateBook(updated)
+            _userMessage.value = "Книга обновлена"
+        }
     }
 
-    fun openAdminLibrary() {
-        _currentScreen.value = Screen.AdminLibrary
+    // НОВОЕ: сохранение прогресса чтения
+    fun saveReadingProgress(book: BookEntity, percent: Int) {
+        viewModelScope.launch {
+            repository.updateBook(book.copy(progressPercent = percent))
+        }
     }
 
-    fun openAdminModerators() {
-        _currentScreen.value = Screen.AdminModerators
-    }
-
-    fun openAdminStats() {
-        _currentScreen.value = Screen.AdminStats
-    }
+    fun openAdminPanel() { _currentScreen.value = Screen.AdminPanel }
+    fun openAdminLibrary() { _currentScreen.value = Screen.AdminLibrary }
+    fun openAdminModerators() { _currentScreen.value = Screen.AdminModerators }
+    fun openAdminStats() { _currentScreen.value = Screen.AdminStats }
 
     fun openBookEditor(book: PublicBook) {
         _editingBook.value = book
         _currentScreen.value = Screen.AdminBookEdit(book)
     }
 
-    /**
-     * Удаляет книгу из общей библиотеки. Доступно админу и модераторам.
-     * После успешного удаления возвращает пользователя в «Управление библиотекой».
-     */
     fun deletePublicBook(bookId: String) {
         if (bookId.isBlank()) return
         if (!canManageBooks.value) {
             _userMessage.value = "Недостаточно прав для удаления"
             return
         }
-
         viewModelScope.launch {
             _isDeleting.value = true
             try {
@@ -446,17 +440,12 @@ class MainViewModel(
         }
     }
 
-    /**
-     * Обновляет метаданные книги (название, автора, описание, категорию, видео-ссылку).
-     * Обложка обновляется отдельно (через Telegram).
-     */
     fun updatePublicBook(book: PublicBook) {
         if (book.id.isBlank()) return
         if (!canManageBooks.value) {
             _userMessage.value = "Недостаточно прав для редактирования"
             return
         }
-
         viewModelScope.launch {
             _isUpdatingBook.value = true
             try {
@@ -470,8 +459,6 @@ class MainViewModel(
             }
         }
     }
-
-    // === ГЕНЕРАЦИЯ ===
 
     fun generateNewQuote() {
         viewModelScope.launch {
@@ -534,6 +521,21 @@ class MainViewModel(
             _isAiThinking.value = true
             _userMessage.value = "Читаем PDF-файл..."
 
+            var finalCoverUri = coverUri
+            if (coverUri.isNotBlank() && coverUri.startsWith("content://")) {
+                try {
+                    val inputStream = context.contentResolver.openInputStream(Uri.parse(coverUri))
+                    val file = File(context.filesDir, "cover_new_${System.currentTimeMillis()}.jpg")
+                    val outputStream = FileOutputStream(file)
+                    inputStream?.copyTo(outputStream)
+                    inputStream?.close()
+                    outputStream.close()
+                    finalCoverUri = file.absolutePath
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+
             val pdfParser = PdfParser(context)
             val result = pdfParser.extractTextFromPdf(uri)
 
@@ -548,7 +550,7 @@ class MainViewModel(
                     generatedQuotesCount = 0,
                     textContent = text,
                     isCurrent = true,
-                    coverUri = coverUri
+                    coverUri = finalCoverUri
                 )
                 repository.addBook(newBook)
                 _userMessage.value = "Книга успешно загружена! Текст готов к чтению."
