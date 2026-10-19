@@ -37,6 +37,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -48,6 +49,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -92,9 +94,23 @@ private val themeWhite = ReaderTheme("Белый", Color(0xFFFDFBF7), Color(0xFF
 private val themeSepia = ReaderTheme("Сепия", Color(0xFFF4ECD8), Color(0xFF5B4636), Color(0xFFEBDDBD), Color(0xFFC09A60))
 private val themeDark = ReaderTheme("Чёрный", Color(0xFF130F0C), Color(0xFFE8E1D9), Color(0xFF1E1712), Color(0xFFE5B064))
 
+// МОЩНАЯ ОЧИСТКА ТЕКСТА ДЛЯ TTS
 private fun cleanTextForTts(text: String): String {
-    return text.replace(Regex("[\\*\\|_#<>]"), " ")
-        .replace(Regex("\\s+"), " ")
+    return text
+        // 1. Убираем ссылки (http, https, www)
+        .replace(Regex("""(https?://|www\.)\S+"""), " ")
+        // 2. Убираем длинные линии и разделители (___, ===, ---)
+        .replace(Regex("""[_*=\-—]{3,}"""), " ")
+        // 3. Убираем переносы слов в конце строки (кни-\nга -> книга)
+        .replace(Regex("""-\r?\n"""), "")
+        // 4. Убираем не-буквы, не-цифры и не-пунктуацию
+        .replace(Regex("""[^а-яА-ЯёЁa-zA-Z0-9\s.,!?;:\-—"«»()]"""), " ")
+        // 5. Убираем номера страниц (одинокие цифры на новой строке)
+        .replace(Regex("""(?m)^\s*\d+\s*$"""), "")
+        // 6. Принудительно ставим пробел после знаков препинания, если его нет (для пауз)
+        .replace(Regex("""([.,!?;:])(?=[а-яА-ЯёЁa-zA-Z0-9«(])"""), "$1 ")
+        // 7. Убираем лишние пробелы и переносы строк
+        .replace(Regex("""\s+"""), " ")
         .trim()
 }
 
@@ -124,6 +140,8 @@ fun ReaderScreen(
     var showSearchSheet by remember { mutableStateOf(false) }
     var showTocSheet by remember { mutableStateOf(false) }
     var controlsVisible by remember { mutableStateOf(true) }
+    
+    var showVoiceDialog by remember { mutableStateOf(false) }
 
     var isAutoScrolling by remember { mutableStateOf(false) }
 
@@ -160,16 +178,12 @@ fun ReaderScreen(
         }
     }
 
-    // Слушатель окончания аудио (АВТО-ПЕРЕЛИСТЫВАНИЕ)
+    // Слушатель окончания аудио
     DisposableEffect(Unit) {
         viewModel.setOnTtsFinishedListener {
             if (playingPage < currentPages.size - 1) {
                 playingPage++
-                
-                // Сначала запускаем звук следующей страницы
                 viewModel.speakText(cleanTextForTts(currentPages[playingPage]))
-                
-                // А параллельно листаем экран
                 coroutineScope.launch {
                     isAutoScrolling = true
                     pagerState.animateScrollToPage(playingPage)
@@ -196,8 +210,8 @@ fun ReaderScreen(
         }
     }
 
-    // Предзагрузка следующей страницы
-    LaunchedEffect(playingPage, isSpeaking) {
+    // Предзагрузка
+    LaunchedEffect(playingPage, isSpeaking, selectedVoice) {
         if (isSpeaking && playingPage < pages.size - 1) {
             viewModel.preloadNextTts(cleanTextForTts(pages[playingPage + 1]))
         }
@@ -294,8 +308,7 @@ fun ReaderScreen(
                         } else {
                             IconButton(onClick = {
                                 controlsVisible = true
-                                playingPage = pagerState.currentPage
-                                viewModel.speakText(cleanTextForTts(pages[playingPage]))
+                                showVoiceDialog = true
                             }) {
                                 Icon(Icons.Default.VolumeUp, "Озвучить", tint = currentTheme.accent)
                             }
@@ -371,6 +384,53 @@ fun ReaderScreen(
                 }
             }
         }
+    }
+
+    // === ДИАЛОГ ВЫБОРА ГОЛОСА ===
+    if (showVoiceDialog) {
+        AlertDialog(
+            onDismissRequest = { showVoiceDialog = false },
+            containerColor = currentTheme.surface,
+            titleContentColor = currentTheme.text,
+            textContentColor = currentTheme.text.copy(alpha = 0.7f),
+            title = {
+                Text(
+                    text = "Выберите голос",
+                    style = MaterialTheme.typography.titleLarge.copy(
+                        fontFamily = PlayfairDisplayFontFamily,
+                        fontWeight = FontWeight.Bold
+                    )
+                )
+            },
+            text = {
+                Text("Каким голосом будем читать эту книгу?")
+            },
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    TextButton(onClick = {
+                        viewModel.setTtsVoice("ru-RU-SvetlanaNeural")
+                        playingPage = pagerState.currentPage
+                        viewModel.speakText(cleanTextForTts(pages[playingPage]))
+                        showVoiceDialog = false
+                    }) {
+                        Text("Светлана", color = currentTheme.accent, fontWeight = FontWeight.Bold)
+                    }
+                    TextButton(onClick = {
+                        viewModel.setTtsVoice("ru-RU-DmitryNeural")
+                        playingPage = pagerState.currentPage
+                        viewModel.speakText(cleanTextForTts(pages[playingPage]))
+                        showVoiceDialog = false
+                    }) {
+                        Text("Дмитрий", color = currentTheme.accent, fontWeight = FontWeight.Bold)
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showVoiceDialog = false }) {
+                    Text("Отмена", color = currentTheme.text.copy(alpha = 0.5f))
+                }
+            }
+        )
     }
 
     // === ШТОРКА ПОИСКА ===

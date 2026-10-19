@@ -36,8 +36,10 @@ class RussianTtsManager(private val context: Context) {
     
     private var currentSpeed = 1.0f
 
+    // === СИСТЕМА ПРЕДЗАГРУЗКИ ===
     private var preloadedFile: File? = null
     private var preloadedText: String? = null
+    private var preloadedVoice: String? = null
     private var preloadJob: Job? = null
 
     private val _isSpeaking = MutableStateFlow(false)
@@ -49,7 +51,10 @@ class RussianTtsManager(private val context: Context) {
     var onAudioFinishedListener: (() -> Unit)? = null
 
     fun preloadNext(text: String, voice: String, speed: Float) {
-        if (text.isBlank() || text == preloadedText) return
+        if (text.isBlank()) return
+        
+        // Если текст и голос уже в кэше — ничего не делаем
+        if (text == preloadedText && voice == preloadedVoice) return
         
         preloadJob?.cancel()
         preloadJob = scope.launch {
@@ -80,8 +85,12 @@ class RussianTtsManager(private val context: Context) {
                     }
                 }
                 
+                // Удаляем старый предзагруженный файл, если он был
+                preloadedFile?.delete()
+                
                 preloadedFile = tempFile
                 preloadedText = text
+                preloadedVoice = voice
                 
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -94,10 +103,12 @@ class RussianTtsManager(private val context: Context) {
         
         currentSpeed = speed
 
-        if (text == preloadedText && preloadedFile != null) {
+        // Если текст и голос совпадают с кэшем — играем мгновенно
+        if (text == preloadedText && voice == preloadedVoice && preloadedFile != null) {
             val fileToPlay = preloadedFile!!
             preloadedFile = null
             preloadedText = null
+            preloadedVoice = null
             preloadJob?.cancel()
             
             _isSpeaking.value = true
@@ -106,13 +117,15 @@ class RussianTtsManager(private val context: Context) {
             return
         }
         
-        if (text == preloadedText && preloadedFile == null) {
+        // Если качается прямо сейчас — ждем
+        if (text == preloadedText && voice == preloadedVoice && preloadedFile == null) {
             scope.launch {
                 preloadJob?.join()
-                if (preloadedFile != null) {
+                if (preloadedFile != null && voice == preloadedVoice) {
                     val fileToPlay = preloadedFile!!
                     preloadedFile = null
                     preloadedText = null
+                    preloadedVoice = null
                     
                     _isSpeaking.value = true
                     _isPaused.value = false
@@ -124,10 +137,18 @@ class RussianTtsManager(private val context: Context) {
             return
         }
         
+        // Если голос другой — качаем заново
         startDownloading(text, voice)
     }
 
     private fun startDownloading(text: String, voice: String) {
+        // Сбрасываем старый кэш, так как он может быть от другого голоса
+        preloadJob?.cancel()
+        preloadedFile?.delete()
+        preloadedFile = null
+        preloadedText = null
+        preloadedVoice = null
+
         _isSpeaking.value = true
         _isPaused.value = false
         
@@ -170,7 +191,6 @@ class RussianTtsManager(private val context: Context) {
     }
 
     private fun playAudioFile(file: File) {
-        // Освобождаем старый плеер ДО создания нового
         mediaPlayer?.release()
         mediaPlayer = null
 
@@ -193,7 +213,6 @@ class RussianTtsManager(private val context: Context) {
                 _isPaused.value = false
                 file.delete()
                 
-                // ВАЖНО: Вызываем слушатель чуть позже, чтобы плеер успел освободить ресурсы
                 handler.postDelayed({
                     onAudioFinishedListener?.invoke()
                 }, 100)
@@ -253,6 +272,8 @@ class RussianTtsManager(private val context: Context) {
         stop()
         preloadedFile?.delete()
         preloadedFile = null
+        preloadedText = null
+        preloadedVoice = null
         context.cacheDir.listFiles()?.filter { it.name.startsWith("tts_") }?.forEach { it.delete() }
     }
 }
