@@ -148,6 +148,15 @@ class MainViewModel(
     val dndEnabled: StateFlow<Boolean> = repository.dndEnabled
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
+    private val _selectedVoice = MutableStateFlow("ru-RU-SvetlanaNeural")
+    val selectedVoice: StateFlow<String> = _selectedVoice.asStateFlow()
+
+    val isTtsPaused: StateFlow<Boolean> = repository.ttsManager.isPaused
+    val isTtsSpeaking: StateFlow<Boolean> = repository.ttsManager.isSpeaking
+
+    val ttsSpeed: StateFlow<Float> = repository.ttsSpeed
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1.0f)
+
     init {
         viewModelScope.launch {
             publicBooks.collect { books ->
@@ -168,7 +177,6 @@ class MainViewModel(
             }
         }
 
-        // НОВЫЙ БЛОК: Получение FCM-токена при входе пользователя
         viewModelScope.launch {
             currentUser.collect { user ->
                 if (user != null) {
@@ -183,6 +191,38 @@ class MainViewModel(
                 }
             }
         }
+    }
+
+    fun setTtsVoice(voice: String) {
+        _selectedVoice.value = voice
+    }
+
+    fun speakText(text: String) {
+        repository.ttsManager.speak(text, _selectedVoice.value, ttsSpeed.value)
+    }
+
+    fun preloadNextTts(text: String) {
+        repository.ttsManager.preloadNext(text, _selectedVoice.value, ttsSpeed.value)
+    }
+
+    fun pauseSpeaking() {
+        repository.ttsManager.pause()
+    }
+
+    fun resumeSpeaking() {
+        repository.ttsManager.resume()
+    }
+
+    fun seekSpeaking(deltaMs: Int) {
+        repository.ttsManager.seek(deltaMs)
+    }
+
+    fun setOnTtsFinishedListener(listener: () -> Unit) {
+        repository.ttsManager.onAudioFinishedListener = listener
+    }
+
+    fun stopSpeaking() {
+        repository.stopSpeech()
     }
 
     fun getCoverUrl(coverFileId: String): String? =
@@ -319,12 +359,6 @@ class MainViewModel(
 
     val readerFontSize: StateFlow<Float> = repository.readerFontSize
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 17f)
-
-    val ttsSpeed: StateFlow<Float> = repository.ttsSpeed
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1.0f)
-
-    val isTtsSpeaking: StateFlow<Boolean> = repository.ttsManager.isSpeaking
-    val isRussianSupported: StateFlow<Boolean> = repository.ttsManager.isRussianSupported
 
     private val _isAiThinking = MutableStateFlow(false)
     val isAiThinking: StateFlow<Boolean> = _isAiThinking.asStateFlow()
@@ -627,18 +661,6 @@ class MainViewModel(
             _userMessage.value = "Сюрприз отправлен для ${receiver.name}!"
             _currentScreen.value = Screen.Friends
         }
-    }
-
-    fun speakText(text: String) {
-        repository.speakRussian(text, ttsSpeed.value)
-    }
-
-    fun stopSpeaking() {
-        repository.stopSpeech()
-    }
-
-    fun openTtsSettings() {
-        repository.openTtsSettings()
     }
 
     fun clearMessage() {

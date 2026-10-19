@@ -37,8 +37,6 @@ class LivingPageRepository(
     private val telegramBotService: TelegramBotService
 ) {
 
-    // === АВТОРИЗАЦИЯ ===
-
     val currentUser: StateFlow<FirebaseUser?> = authManager.currentUser
 
     suspend fun signInWithGoogle(context: Context): Result<FirebaseUser> {
@@ -58,12 +56,8 @@ class LivingPageRepository(
 
     fun signOut() = authManager.signOut()
 
-    // === ПРОФИЛЬ И УВЕДОМЛЕНИЯ ===
-    
     suspend fun saveFcmToken(userId: String, token: String) =
         cloudFirestoreService.saveFcmToken(userId, token)
-
-    // === ДРУЗЬЯ (ОБЛАКО) ===
 
     fun observeFriends(userId: String): Flow<List<UserProfile>> =
         cloudFirestoreService.observeFriends(userId)
@@ -80,15 +74,11 @@ class LivingPageRepository(
     fun observeCommunityUsers(): Flow<List<UserProfile>> =
         cloudFirestoreService.observeCommunityUsers()
 
-    // === ЧАТ ===
-
     suspend fun sendMessage(fromId: String, toId: String, text: String) =
         cloudFirestoreService.sendMessage(fromId, toId, text)
 
     fun observeMessages(myId: String, friendId: String): Flow<List<ChatMessage>> =
         cloudFirestoreService.observeMessages(myId, friendId)
-
-    // === КНИГИ ===
 
     val allBooks: Flow<List<BookEntity>> = dao.getAllBooks()
     val currentBook: Flow<BookEntity?> = dao.getCurrentBook()
@@ -108,8 +98,6 @@ class LivingPageRepository(
     suspend fun deleteBook(book: BookEntity) {
         dao.deleteBook(book)
     }
-
-    // === ЦИТАТЫ ===
 
     val allQuotes: Flow<List<QuoteEntity>> = dao.getAllQuotes()
     val todayQuote: Flow<QuoteEntity?> = dao.getTodayQuote()
@@ -137,11 +125,7 @@ class LivingPageRepository(
         dao.updateQuote(quote.copy(isFavorite = !quote.isFavorite))
     }
 
-    // === ДРУЗЬЯ (ЛОКАЛЬНО) ===
-
     val allFriends: Flow<List<FriendEntity>> = dao.getAllFriends()
-
-    // === СЮРПРИЗЫ ===
 
     val allSurprises: Flow<List<SurpriseEntity>> = dao.getAllSurprises()
     val latestUnopenedSurprise: Flow<SurpriseEntity?> = dao.getLatestUnopenedSurprise()
@@ -169,8 +153,6 @@ class LivingPageRepository(
     suspend fun markSurpriseOpened(surprise: SurpriseEntity) {
         dao.updateSurprise(surprise.copy(isOpened = true))
     }
-
-    // === ПУБЛИЧНАЯ БИБЛИОТЕКА ===
 
     fun observePublicBooks(): Flow<List<PublicBook>> =
         cloudFirestoreService.observePublicBooks()
@@ -235,8 +217,6 @@ class LivingPageRepository(
         return Result.success(pdfUri)
     }
 
-    // === МОДЕРАТОРЫ ===
-
     fun observeModerators(): Flow<List<String>> =
         cloudFirestoreService.observeModerators()
 
@@ -248,8 +228,6 @@ class LivingPageRepository(
 
     suspend fun isModerator(uid: String): Boolean =
         cloudFirestoreService.isModerator(uid)
-
-    // === НАСТРОЙКИ ===
 
     val isDarkTheme: Flow<Boolean> = preferencesManager.isDarkTheme
     suspend fun setDarkTheme(isDark: Boolean) = preferencesManager.setDarkTheme(isDark)
@@ -271,8 +249,6 @@ class LivingPageRepository(
     val ttsSpeed: Flow<Float> = preferencesManager.ttsSpeed
     suspend fun setTtsSpeed(speed: Float) = preferencesManager.setTtsSpeed(speed)
 
-    // === НАСТРОЙКИ УВЕДОМЛЕНИЙ ===
-
     val notifyBooks: Flow<Boolean> = preferencesManager.notifyBooks
     suspend fun setNotifyBooks(enabled: Boolean) = preferencesManager.setNotifyBooks(enabled)
 
@@ -281,8 +257,6 @@ class LivingPageRepository(
 
     val dndEnabled: Flow<Boolean> = preferencesManager.dndEnabled
     suspend fun setDndEnabled(enabled: Boolean) = preferencesManager.setDndEnabled(enabled)
-
-    // === ИИ ===
 
     suspend fun generateQuoteWithGemini(
         bookTitle: String,
@@ -293,9 +267,8 @@ class LivingPageRepository(
         return geminiApiClient.generateLiteraryThought(bookTitle, author, customPrompt, userKey)
     }
 
-    // === ОЗВУЧКА ===
-
-    fun speakRussian(text: String, speed: Float = 1.0f) = ttsManager.speak(text, speed)
+    // ИСПРАВЛЕНО: Обновлена сигнатура метода speakRussian
+    fun speakRussian(text: String, voice: String = "ru-RU-SvetlanaNeural", speed: Float = 1.0f) = ttsManager.speak(text, voice, speed)
     fun stopSpeech() = ttsManager.stop()
     fun openTtsSettings() = ttsManager.openTtsSettings()
 }

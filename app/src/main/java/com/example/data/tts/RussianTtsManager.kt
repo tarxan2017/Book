@@ -1,92 +1,258 @@
 package com.example.data.tts
 
 import android.content.Context
-import android.content.Intent
-import android.speech.tts.TextToSpeech
-import android.speech.tts.UtteranceProgressListener
+import android.media.MediaPlayer
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import java.util.Locale
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONObject
+import java.io.File
+import java.util.concurrent.TimeUnit
 
-class RussianTtsManager(private val context: Context) : TextToSpeech.OnInitListener {
+class RussianTtsManager(private val context: Context) {
 
-    private var tts: TextToSpeech? = null
+    private val okHttpClient = OkHttpClient.Builder()
+        .connectTimeout(60, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .build()
+
+    private var mediaPlayer: MediaPlayer? = null
+    private var currentJob: Job? = null
+    private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private val handler = Handler(Looper.getMainLooper())
+    
+    private var currentSpeed = 1.0f
+
+    private var preloadedFile: File? = null
+    private var preloadedText: String? = null
+    private var preloadJob: Job? = null
 
     private val _isSpeaking = MutableStateFlow(false)
     val isSpeaking: StateFlow<Boolean> = _isSpeaking.asStateFlow()
 
-    private val _isInitialized = MutableStateFlow(false)
-    val isInitialized: StateFlow<Boolean> = _isInitialized.asStateFlow()
+    private val _isPaused = MutableStateFlow(false)
+    val isPaused: StateFlow<Boolean> = _isPaused.asStateFlow()
 
-    private val _isRussianSupported = MutableStateFlow(true)
-    val isRussianSupported: StateFlow<Boolean> = _isRussianSupported.asStateFlow()
+    var onAudioFinishedListener: (() -> Unit)? = null
 
-    private val russianLocale = Locale("ru", "RU")
+    fun preloadNext(text: String, voice: String, speed: Float) {
+        if (text.isBlank() || text == preloadedText) return
+        
+        preloadJob?.cancel()
+        preloadJob = scope.launch {
+            try {
+                val json = JSONObject().apply {
+                    put("text", text)
+                    put("voice", voice)
+                }
+                val body = json.toString().toRequestBody("application/json".toMediaType())
+                val request = Request.Builder()
+                    .url("https://voicecafe-final.taxo2015.workers.dev/api/tts")
+                    .post(body)
+                    .build()
 
-    init {
-        tts = TextToSpeech(context.applicationContext, this)
-    }
+                val response = withContext(Dispatchers.IO) {
+                    okHttpClient.newCall(request).execute()
+                }
 
-    override fun onInit(status: Int) {
-        if (status == TextToSpeech.SUCCESS) {
-            val result = tts?.setLanguage(russianLocale)
-            if (result == TextToSpeech.LANG_MISSING_DATA || result == TextToSpeech.LANG_NOT_SUPPORTED) {
-                _isRussianSupported.value = false
-            } else {
-                _isRussianSupported.value = true
+                if (!response.isSuccessful) return@launch
+
+                val responseBody = response.body ?: return@launch
+                val inputStream = responseBody.byteStream()
+
+                val tempFile = File(context.cacheDir, "tts_next_${System.currentTimeMillis()}.mp3")
+                withContext(Dispatchers.IO) {
+                    tempFile.outputStream().use { output ->
+                        inputStream.copyTo(output)
+                    }
+                }
+                
+                preloadedFile = tempFile
+                preloadedText = text
+                
+            } catch (e: Exception) {
+                e.printStackTrace()
             }
-            _isInitialized.value = true
-
-            tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                override fun onStart(utteranceId: String?) {
-                    _isSpeaking.value = true
-                }
-
-                override fun onDone(utteranceId: String?) {
-                    _isSpeaking.value = false
-                }
-
-                override fun onError(utteranceId: String?) {
-                    _isSpeaking.value = false
-                }
-            })
-        } else {
-            _isInitialized.value = false
         }
     }
 
-    fun speak(text: String, speed: Float = 1.0f) {
+    fun speak(text: String, voice: String = "ru-RU-SvetlanaNeural", speed: Float = 1.0f) {
         if (text.isBlank()) return
-        tts?.setSpeechRate(speed)
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "LIVING_PAGE_TTS_${System.currentTimeMillis()}")
+        
+        currentSpeed = speed
+
+        if (text == preloadedText && preloadedFile != null) {
+            val fileToPlay = preloadedFile!!
+            preloadedFile = null
+            preloadedText = null
+            preloadJob?.cancel()
+            
+            _isSpeaking.value = true
+            _isPaused.value = false
+            playAudioFile(fileToPlay)
+            return
+        }
+        
+        if (text == preloadedText && preloadedFile == null) {
+            scope.launch {
+                preloadJob?.join()
+                if (preloadedFile != null) {
+                    val fileToPlay = preloadedFile!!
+                    preloadedFile = null
+                    preloadedText = null
+                    
+                    _isSpeaking.value = true
+                    _isPaused.value = false
+                    playAudioFile(fileToPlay)
+                } else {
+                    startDownloading(text, voice)
+                }
+            }
+            return
+        }
+        
+        startDownloading(text, voice)
+    }
+
+    private fun startDownloading(text: String, voice: String) {
         _isSpeaking.value = true
+        _isPaused.value = false
+        
+        currentJob?.cancel()
+        currentJob = scope.launch {
+            try {
+                val json = JSONObject().apply {
+                    put("text", text)
+                    put("voice", voice)
+                }
+                val body = json.toString().toRequestBody("application/json".toMediaType())
+                val request = Request.Builder()
+                    .url("https://voicecafe-final.taxo2015.workers.dev/api/tts")
+                    .post(body)
+                    .build()
+
+                val response = withContext(Dispatchers.IO) {
+                    okHttpClient.newCall(request).execute()
+                }
+
+                if (!response.isSuccessful) throw Exception("Ошибка сервера: ${response.code}")
+
+                val responseBody = response.body ?: throw Exception("Пустой ответ")
+                val inputStream = responseBody.byteStream()
+
+                val tempFile = File(context.cacheDir, "tts_${System.currentTimeMillis()}.mp3")
+                withContext(Dispatchers.IO) {
+                    tempFile.outputStream().use { output ->
+                        inputStream.copyTo(output)
+                    }
+                }
+
+                playAudioFile(tempFile)
+                
+            } catch (e: Exception) {
+                e.printStackTrace()
+                _isSpeaking.value = false
+            }
+        }
+    }
+
+    private fun playAudioFile(file: File) {
+        // Освобождаем старый плеер ДО создания нового
+        mediaPlayer?.release()
+        mediaPlayer = null
+
+        mediaPlayer = MediaPlayer().apply {
+            setDataSource(file.absolutePath)
+            
+            setOnPreparedListener { mp ->
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    try {
+                        mp.playbackParams = mp.playbackParams.setSpeed(currentSpeed)
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+                mp.start()
+            }
+            
+            setOnCompletionListener {
+                _isSpeaking.value = false
+                _isPaused.value = false
+                file.delete()
+                
+                // ВАЖНО: Вызываем слушатель чуть позже, чтобы плеер успел освободить ресурсы
+                handler.postDelayed({
+                    onAudioFinishedListener?.invoke()
+                }, 100)
+            }
+            
+            setOnErrorListener { _, _, _ ->
+                _isSpeaking.value = false
+                _isPaused.value = false
+                file.delete()
+                true
+            }
+            
+            prepareAsync()
+        }
+    }
+
+    fun pause() {
+        if (mediaPlayer?.isPlaying == true) {
+            mediaPlayer?.pause()
+            _isPaused.value = true
+        }
+    }
+
+    fun resume() {
+        if (_isPaused.value) {
+            mediaPlayer?.start()
+            _isPaused.value = false
+        }
+    }
+
+    fun seek(deltaMs: Int) {
+        mediaPlayer?.let {
+            val currentPos = it.currentPosition
+            val newPos = (currentPos + deltaMs).coerceIn(0, it.duration)
+            it.seekTo(newPos)
+        }
     }
 
     fun stop() {
-        tts?.stop()
+        currentJob?.cancel()
+        currentJob = null
+        preloadJob?.cancel()
+        preloadJob = null
+        
+        mediaPlayer?.let {
+            if (it.isPlaying) it.stop()
+            it.release()
+        }
+        mediaPlayer = null
         _isSpeaking.value = false
+        _isPaused.value = false
     }
 
-    fun openTtsSettings() {
-        try {
-            val intent = Intent("com.android.settings.TTS_SETTINGS").apply {
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            }
-            context.startActivity(intent)
-        } catch (_: Exception) {
-            try {
-                val intent = Intent(android.provider.Settings.ACTION_SETTINGS).apply {
-                    flags = Intent.FLAG_ACTIVITY_NEW_TASK
-                }
-                context.startActivity(intent)
-            } catch (_: Exception) {}
-        }
-    }
+    fun openTtsSettings() {}
 
     fun shutdown() {
-        tts?.stop()
-        tts?.shutdown()
-        tts = null
+        stop()
+        preloadedFile?.delete()
+        preloadedFile = null
+        context.cacheDir.listFiles()?.filter { it.name.startsWith("tts_") }?.forEach { it.delete() }
     }
 }
