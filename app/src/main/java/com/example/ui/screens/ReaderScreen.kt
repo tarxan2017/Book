@@ -171,6 +171,7 @@ fun ReaderScreen(
         }
     }
 
+    // Сохранение прогресса
     LaunchedEffect(pagerState.currentPage) {
         val progress = ((pagerState.currentPage + 1).toFloat() / pages.size * 100).toInt()
         if (progress != book.progressPercent) {
@@ -182,10 +183,12 @@ fun ReaderScreen(
     DisposableEffect(Unit) {
         viewModel.setOnTtsFinishedListener {
             if (playingPage < currentPages.size - 1) {
+                // ВАЖНО: Ставим флаг ДО запуска анимации, чтобы читалка не думала, что это ручной свайп
+                isAutoScrolling = true
                 playingPage++
                 viewModel.speakText(cleanTextForTts(currentPages[playingPage]))
+                
                 coroutineScope.launch {
-                    isAutoScrolling = true
                     pagerState.animateScrollToPage(playingPage)
                     isAutoScrolling = false
                 }
@@ -196,21 +199,7 @@ fun ReaderScreen(
         onDispose { viewModel.stopSpeaking() }
     }
 
-    // Ручное перелистывание
-    LaunchedEffect(pagerState.currentPage) {
-        if (!isAutoScrolling) {
-            val oldPlayingPage = playingPage
-            playingPage = pagerState.currentPage
-            if (isSpeaking || isPaused) {
-                if (oldPlayingPage != playingPage) {
-                    viewModel.stopSpeaking()
-                    viewModel.speakText(cleanTextForTts(pages[playingPage]))
-                }
-            }
-        }
-    }
-
-    // Предзагрузка
+    // Предзагрузка следующей страницы
     LaunchedEffect(playingPage, isSpeaking, selectedVoice) {
         if (isSpeaking && playingPage < pages.size - 1) {
             viewModel.preloadNextTts(cleanTextForTts(pages[playingPage + 1]))
@@ -327,7 +316,7 @@ fun ReaderScreen(
                                     if (selectedVoice != "ru-RU-SvetlanaNeural") {
                                         viewModel.setTtsVoice("ru-RU-SvetlanaNeural")
                                         viewModel.stopSpeaking()
-                                        viewModel.speakText(cleanTextForTts(pages[playingPage]))
+                                        viewModel.speakText(cleanTextForTts(pages[playingPage]), forceVoice = "ru-RU-SvetlanaNeural")
                                     }
                                 }.padding(8.dp)
                             )
@@ -338,7 +327,7 @@ fun ReaderScreen(
                                     if (selectedVoice != "ru-RU-DmitryNeural") {
                                         viewModel.setTtsVoice("ru-RU-DmitryNeural")
                                         viewModel.stopSpeaking()
-                                        viewModel.speakText(cleanTextForTts(pages[playingPage]))
+                                        viewModel.speakText(cleanTextForTts(pages[playingPage]), forceVoice = "ru-RU-DmitryNeural")
                                     }
                                 }.padding(8.dp)
                             )
@@ -410,7 +399,7 @@ fun ReaderScreen(
                     TextButton(onClick = {
                         viewModel.setTtsVoice("ru-RU-SvetlanaNeural")
                         playingPage = pagerState.currentPage
-                        viewModel.speakText(cleanTextForTts(pages[playingPage]))
+                        viewModel.speakText(cleanTextForTts(pages[playingPage]), forceVoice = "ru-RU-SvetlanaNeural")
                         showVoiceDialog = false
                     }) {
                         Text("Светлана", color = currentTheme.accent, fontWeight = FontWeight.Bold)
@@ -418,7 +407,7 @@ fun ReaderScreen(
                     TextButton(onClick = {
                         viewModel.setTtsVoice("ru-RU-DmitryNeural")
                         playingPage = pagerState.currentPage
-                        viewModel.speakText(cleanTextForTts(pages[playingPage]))
+                        viewModel.speakText(cleanTextForTts(pages[playingPage]), forceVoice = "ru-RU-DmitryNeural")
                         showVoiceDialog = false
                     }) {
                         Text("Дмитрий", color = currentTheme.accent, fontWeight = FontWeight.Bold)
@@ -484,7 +473,7 @@ fun ReaderScreen(
                                         if (isSpeaking) {
                                             playingPage = pageIndex
                                             viewModel.stopSpeaking()
-                                            viewModel.speakText(cleanTextForTts(pages[pageIndex]))
+                                            viewModel.speakText(cleanTextForTts(pages[pageIndex]), forceVoice = selectedVoice)
                                         }
                                     }
                                     .padding(vertical = 12.dp)
@@ -530,7 +519,7 @@ fun ReaderScreen(
                                     if (isSpeaking) {
                                         playingPage = pageIndex
                                         viewModel.stopSpeaking()
-                                        viewModel.speakText(cleanTextForTts(pages[pageIndex]))
+                                        viewModel.speakText(cleanTextForTts(pages[pageIndex]), forceVoice = selectedVoice)
                                     }
                                 }
                                 .padding(vertical = 12.dp, horizontal = 8.dp)

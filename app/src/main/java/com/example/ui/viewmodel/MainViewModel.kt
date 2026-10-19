@@ -197,8 +197,12 @@ class MainViewModel(
         _selectedVoice.value = voice
     }
 
-    fun speakText(text: String) {
-        repository.ttsManager.speak(text, _selectedVoice.value, ttsSpeed.value)
+    fun speakText(text: String, forceVoice: String? = null) {
+        repository.ttsManager.speak(
+            text = text, 
+            voice = forceVoice ?: _selectedVoice.value, 
+            speed = ttsSpeed.value
+        )
     }
 
     fun preloadNextTts(text: String) {
