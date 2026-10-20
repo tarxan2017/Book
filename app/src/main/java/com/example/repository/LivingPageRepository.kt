@@ -18,13 +18,22 @@ import com.example.data.remote.TelegramBotService
 import com.example.data.remote.model.ChatMessage
 import com.example.data.remote.model.CloudQuote
 import com.example.data.remote.model.CloudSurprise
+import com.example.data.remote.model.Comment
 import com.example.data.remote.model.PublicBook
 import com.example.data.remote.model.UserProfile
 import com.example.data.tts.RussianTtsManager
 import com.google.firebase.auth.FirebaseUser
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
 
 class LivingPageRepository(
     private val dao: LivingPageDao,
@@ -36,6 +45,9 @@ class LivingPageRepository(
     private val authManager: GoogleAuthManager,
     private val telegramBotService: TelegramBotService
 ) {
+
+    // Клиент для запросов к нашему API комментариев
+    private val okHttpClient = OkHttpClient()
 
     val currentUser: StateFlow<FirebaseUser?> = authManager.currentUser
 
@@ -175,6 +187,20 @@ class LivingPageRepository(
     }
 
     suspend fun downloadPublicBook(context: Context, book: PublicBook): Result<Uri> {
+        // === ПРОВЕРКА НА ДУБЛИКАТ ===
+        val existingBooks = dao.getAllBooks().first()
+        val existingBook = existingBooks.find { 
+            it.title.trim().equals(book.title.trim(), ignoreCase = true) && 
+            it.author.trim().equals(book.author.trim(), ignoreCase = true) 
+        }
+
+        if (existingBook != null) {
+            dao.clearCurrentBook()
+            dao.setCurrentBookById(existingBook.id)
+            return Result.success(Uri.parse(existingBook.coverUri ?: ""))
+        }
+
+        // === ЕСЛИ КНИГИ НЕТ, СКАЧИВАЕМ ===
         if (book.pdfFileId.isBlank()) {
             return Result.failure(Exception("У этой книги нет PDF-файла"))
         }
@@ -267,8 +293,71 @@ class LivingPageRepository(
         return geminiApiClient.generateLiteraryThought(bookTitle, author, customPrompt, userKey)
     }
 
-    // ИСПРАВЛЕНО: Обновлена сигнатура метода speakRussian
     fun speakRussian(text: String, voice: String = "ru-RU-SvetlanaNeural", speed: Float = 1.0f) = ttsManager.speak(text, voice, speed)
     fun stopSpeech() = ttsManager.stop()
     fun openTtsSettings() = ttsManager.openTtsSettings()
+
+    // ==========================================
+    // НОВЫЕ ФУНКЦИИ ДЛЯ РАБОТЫ С КОММЕНТАРИЯМИ
+    // ==========================================
+
+    suspend fun getComments(bookId: String): Result<List<Comment>> = withContext(Dispatchers.IO) {
+        try {
+            val request = Request.Builder()
+                .url("https://livingpage-api.taxo2015.workers.dev/api/comments?bookId=$bookId")
+                .get()
+                .build()
+
+            val response = okHttpClient.newCall(request).execute()
+            if (!response.isSuccessful) throw Exception("Ошибка сервера: ${response.code}")
+
+            val bodyString = response.body?.string() ?: throw Exception("Пустой ответ")
+            val jsonArray = JSONArray(bodyString)
+            val commentsList = mutableListOf<Comment>()
+
+            for (i in 0 until jsonArray.length()) {
+                val obj = jsonArray.getJSONObject(i)
+                commentsList.add(
+                    Comment(
+                        id = obj.optInt("id"),
+                        book_id = obj.optString("book_id"),
+                        user_id = obj.optString("user_id"),
+                        user_name = obj.optString("user_name"),
+                        text = obj.optString("text"),
+                        created_at = obj.optLong("created_at")
+                    )
+                )
+            }
+            Result.success(commentsList)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    suspend fun postComment(bookId: String, text: String): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val user = currentUser.value
+            val userId = user?.uid ?: "anonymous"
+            val userName = user?.displayName ?: "Читатель"
+
+            val json = JSONObject().apply {
+                put("bookId", bookId)
+                put("userId", userId)
+                put("userName", userName)
+                put("text", text)
+            }
+            val body = json.toString().toRequestBody("application/json".toMediaType())
+            val request = Request.Builder()
+                .url("https://livingpage-api.taxo2015.workers.dev/api/comments")
+                .post(body)
+                .build()
+
+            val response = okHttpClient.newCall(request).execute()
+            if (!response.isSuccessful) throw Exception("Ошибка сервера: ${response.code}")
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
 }

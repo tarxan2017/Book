@@ -46,6 +46,7 @@ import com.example.ui.screens.ChatScreen
 import com.example.ui.screens.FriendsScreen
 import com.example.ui.screens.GiftAnimationScreen
 import com.example.ui.screens.HomeScreen
+import com.example.ui.screens.MyBookDetailScreen // <-- НОВЫЙ ИМПОРТ
 import com.example.ui.screens.MyBookScreen
 import com.example.ui.screens.NotificationSettingsScreen
 import com.example.ui.screens.OpenBookAnimationScreen
@@ -101,7 +102,6 @@ class MainActivity : ComponentActivity() {
 
             val snackbarHostState = remember { SnackbarHostState() }
 
-            // НОВОЕ: Запрос разрешения на уведомления
             val permissionLauncher = rememberLauncherForActivityResult(
                 contract = ActivityResultContracts.RequestPermission()
             ) { _ -> }
@@ -132,6 +132,7 @@ class MainActivity : ComponentActivity() {
                         is Screen.Chat -> mainViewModel.navigateTo(Screen.Friends)
                         is Screen.PublicLibrary -> mainViewModel.navigateTo(Screen.Home)
                         is Screen.PublicBookDetail -> mainViewModel.navigateTo(Screen.PublicLibrary)
+                        is Screen.MyBookDetail -> mainViewModel.navigateTo(Screen.MyBook) // <-- НОВАЯ ЛОГИКА НАЗАД
                         is Screen.VideoPlayer -> mainViewModel.navigateTo(Screen.Home)
                         is Screen.SendSurprise -> mainViewModel.navigateTo(Screen.Friends)
                         is Screen.ReceiveSurprise -> mainViewModel.navigateTo(Screen.Friends)
@@ -206,6 +207,11 @@ class MainActivity : ComponentActivity() {
                             is Screen.Reader -> ReaderScreen(viewModel = mainViewModel)
                             is Screen.PublicLibrary -> PublicLibraryScreen(viewModel = mainViewModel)
                             is Screen.PublicBookDetail -> PublicBookDetailScreen(
+                                viewModel = mainViewModel,
+                                book = screen.book
+                            )
+                            // НОВЫЙ ЭКРАН: ДЕТАЛИ МОЕЙ КНИГИ
+                            is Screen.MyBookDetail -> MyBookDetailScreen(
                                 viewModel = mainViewModel,
                                 book = screen.book
                             )

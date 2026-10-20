@@ -13,6 +13,7 @@ import com.example.data.local.entity.FriendEntity
 import com.example.data.local.entity.QuoteEntity
 import com.example.data.local.entity.SurpriseEntity
 import com.example.data.remote.model.ChatMessage
+import com.example.data.remote.model.Comment
 import com.example.data.remote.model.PublicBook
 import com.example.data.remote.model.UserProfile
 import com.example.repository.LivingPageRepository
@@ -43,6 +44,7 @@ sealed class Screen {
     object Reader : Screen()
     object PublicLibrary : Screen()
     data class PublicBookDetail(val book: PublicBook) : Screen()
+    data class MyBookDetail(val book: BookEntity) : Screen()
     data class VideoPlayer(val quote: QuoteEntity) : Screen()
     data class SendSurprise(val defaultFriend: FriendEntity? = null) : Screen()
     data class ReceiveSurprise(val surprise: SurpriseEntity) : Screen()
@@ -157,6 +159,16 @@ class MainViewModel(
     val ttsSpeed: StateFlow<Float> = repository.ttsSpeed
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1.0f)
 
+    // === СОСТОЯНИЯ ДЛЯ КОММЕНТАРИЕВ ===
+    private val _comments = MutableStateFlow<List<Comment>>(emptyList())
+    val comments: StateFlow<List<Comment>> = _comments.asStateFlow()
+
+    private val _isCommentsLoading = MutableStateFlow(false)
+    val isCommentsLoading: StateFlow<Boolean> = _isCommentsLoading.asStateFlow()
+
+    private val _isCommentSending = MutableStateFlow(false)
+    val isCommentSending: StateFlow<Boolean> = _isCommentSending.asStateFlow()
+
     init {
         viewModelScope.launch {
             publicBooks.collect { books ->
@@ -193,6 +205,35 @@ class MainViewModel(
         }
     }
 
+    // === ФУНКЦИИ ДЛЯ КОММЕНТАРИЕВ ===
+    fun fetchComments(bookId: String) {
+        viewModelScope.launch {
+            _isCommentsLoading.value = true
+            val result = repository.getComments(bookId)
+            result.onSuccess { list ->
+                _comments.value = list
+            }.onFailure { error ->
+                _userMessage.value = "Ошибка загрузки комментариев: ${error.localizedMessage}"
+            }
+            _isCommentsLoading.value = false
+        }
+    }
+
+    fun sendComment(bookId: String, text: String, onSuccess: () -> Unit) {
+        if (text.isBlank()) return
+        viewModelScope.launch {
+            _isCommentSending.value = true
+            val result = repository.postComment(bookId, text)
+            result.onSuccess {
+                onSuccess() // Очищаем поле ввода в UI
+                fetchComments(bookId) // Обновляем ленту
+            }.onFailure { error ->
+                _userMessage.value = "Ошибка отправки: ${error.localizedMessage}"
+            }
+            _isCommentSending.value = false
+        }
+    }
+
     fun setTtsVoice(voice: String) {
         _selectedVoice.value = voice
     }
@@ -209,25 +250,11 @@ class MainViewModel(
         repository.ttsManager.preloadNext(text, _selectedVoice.value, ttsSpeed.value)
     }
 
-    fun pauseSpeaking() {
-        repository.ttsManager.pause()
-    }
-
-    fun resumeSpeaking() {
-        repository.ttsManager.resume()
-    }
-
-    fun seekSpeaking(deltaMs: Int) {
-        repository.ttsManager.seek(deltaMs)
-    }
-
-    fun setOnTtsFinishedListener(listener: () -> Unit) {
-        repository.ttsManager.onAudioFinishedListener = listener
-    }
-
-    fun stopSpeaking() {
-        repository.stopSpeech()
-    }
+    fun pauseSpeaking() { repository.ttsManager.pause() }
+    fun resumeSpeaking() { repository.ttsManager.resume() }
+    fun seekSpeaking(deltaMs: Int) { repository.ttsManager.seek(deltaMs) }
+    fun setOnTtsFinishedListener(listener: () -> Unit) { repository.ttsManager.onAudioFinishedListener = listener }
+    fun stopSpeaking() { repository.stopSpeech() }
 
     fun getCoverUrl(coverFileId: String): String? =
         if (coverFileId.isBlank()) null else _coverUrls.value[coverFileId]
@@ -235,6 +262,7 @@ class MainViewModel(
     fun openPublicBook(book: PublicBook) {
         _selectedPublicBook.value = book
         _currentScreen.value = Screen.PublicBookDetail(book)
+        fetchComments(book.id) // Автоматически загружаем комменты при открытии
     }
 
     fun openPublicLibrary() {
@@ -248,10 +276,10 @@ class MainViewModel(
             _isDownloading.value = false
 
             result.onSuccess {
-                _userMessage.value = "Книга скачана! Открой «Мою книгу»."
-                _currentScreen.value = Screen.MyBook
+                _userMessage.value = "Открываем книгу..."
+                _currentScreen.value = Screen.Reader
             }.onFailure { error ->
-                _userMessage.value = "Ошибка скачивания: ${error.localizedMessage}"
+                _userMessage.value = "Ошибка: ${error.localizedMessage}"
             }
         }
     }
@@ -315,10 +343,7 @@ class MainViewModel(
         val friend = _chatFriend.value ?: return
         val me = currentUser.value ?: return
         if (text.isBlank()) return
-
-        viewModelScope.launch {
-            repository.sendMessage(me.uid, friend.userId, text)
-        }
+        viewModelScope.launch { repository.sendMessage(me.uid, friend.userId, text) }
     }
 
     fun signInWithGoogle(context: Context) {
@@ -338,31 +363,17 @@ class MainViewModel(
     }
 
     val dailyUsage: StateFlow<DailyUsage> = repository.dailyUsage
-        .stateIn(
-            viewModelScope,
-            SharingStarted.WhileSubscribed(5000),
-            DailyUsage(usedCount = 1, maxDaily = 5, remainingCount = 4, isLimitReached = false, lastDate = "")
-        )
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), DailyUsage(1, 5, 4, false, ""))
 
-    val remainingGenerations: StateFlow<Int> = dailyUsage
-        .map { it.remainingCount }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 4)
-
-    val isGenerationLimitReached: StateFlow<Boolean> = dailyUsage
-        .map { it.isLimitReached }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    val remainingGenerations: StateFlow<Int> = dailyUsage.map { it.remainingCount }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 4)
+    val isGenerationLimitReached: StateFlow<Boolean> = dailyUsage.map { it.isLimitReached }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
     private val _showLimitReachedDialog = MutableStateFlow(false)
     val showLimitReachedDialog: StateFlow<Boolean> = _showLimitReachedDialog.asStateFlow()
 
-    val geminiApiKey: StateFlow<String> = repository.geminiApiKey
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
-
-    val videoApiKey: StateFlow<String> = repository.videoApiKey
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
-
-    val readerFontSize: StateFlow<Float> = repository.readerFontSize
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 17f)
+    val geminiApiKey: StateFlow<String> = repository.geminiApiKey.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+    val videoApiKey: StateFlow<String> = repository.videoApiKey.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+    val readerFontSize: StateFlow<Float> = repository.readerFontSize.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 17f)
 
     private val _isAiThinking = MutableStateFlow(false)
     val isAiThinking: StateFlow<Boolean> = _isAiThinking.asStateFlow()
@@ -370,13 +381,9 @@ class MainViewModel(
     private val _userMessage = MutableStateFlow<String?>(null)
     val userMessage: StateFlow<String?> = _userMessage.asStateFlow()
 
-    fun navigateTo(screen: Screen) {
-        _currentScreen.value = screen
-    }
-
-    fun dismissLimitDialog() {
-        _showLimitReachedDialog.value = false
-    }
+    fun navigateTo(screen: Screen) { _currentScreen.value = screen }
+    fun dismissLimitDialog() { _showLimitReachedDialog.value = false }
+    fun clearMessage() { _userMessage.value = null }
 
     fun resetDailyLimitForDemo() {
         viewModelScope.launch {
@@ -386,69 +393,20 @@ class MainViewModel(
         }
     }
 
-    fun toggleTheme(isDark: Boolean) {
-        viewModelScope.launch {
-            repository.setDarkTheme(isDark)
-        }
-    }
+    fun toggleTheme(isDark: Boolean) { viewModelScope.launch { repository.setDarkTheme(isDark) } }
+    fun setGeminiApiKey(key: String) { viewModelScope.launch { repository.setGeminiApiKey(key); _userMessage.value = "Ключ Gemini сохранен" } }
+    fun setVideoApiKey(key: String) { viewModelScope.launch { repository.setVideoApiKey(key); _userMessage.value = "Ключ Magic Hour сохранен" } }
+    fun setReaderFontSize(size: Float) { viewModelScope.launch { repository.setReaderFontSize(size) } }
+    fun setNotifyBooks(enabled: Boolean) { viewModelScope.launch { repository.setNotifyBooks(enabled) } }
+    fun setNotifyFriends(enabled: Boolean) { viewModelScope.launch { repository.setNotifyFriends(enabled) } }
+    fun setDndEnabled(enabled: Boolean) { viewModelScope.launch { repository.setDndEnabled(enabled) } }
 
-    fun setGeminiApiKey(key: String) {
-        viewModelScope.launch {
-            repository.setGeminiApiKey(key)
-            _userMessage.value = "Ключ Gemini сохранен"
-        }
-    }
+    fun addModerator(uid: String, name: String) { viewModelScope.launch { repository.addModerator(uid, name); _userMessage.value = "Модератор добавлен" } }
+    fun removeModerator(uid: String) { viewModelScope.launch { repository.removeModerator(uid); _userMessage.value = "Модератор удалён" } }
 
-    fun setVideoApiKey(key: String) {
-        viewModelScope.launch {
-            repository.setVideoApiKey(key)
-            _userMessage.value = "Ключ Magic Hour сохранен"
-        }
-    }
-
-    fun setReaderFontSize(size: Float) {
-        viewModelScope.launch {
-            repository.setReaderFontSize(size)
-        }
-    }
-
-    fun setNotifyBooks(enabled: Boolean) {
-        viewModelScope.launch {
-            repository.setNotifyBooks(enabled)
-        }
-    }
-
-    fun setNotifyFriends(enabled: Boolean) {
-        viewModelScope.launch {
-            repository.setNotifyFriends(enabled)
-        }
-    }
-
-    fun setDndEnabled(enabled: Boolean) {
-        viewModelScope.launch {
-            repository.setDndEnabled(enabled)
-        }
-    }
-
-    fun addModerator(uid: String, name: String) {
-        viewModelScope.launch {
-            repository.addModerator(uid, name)
-            _userMessage.value = "Модератор добавлен"
-        }
-    }
-
-    fun removeModerator(uid: String) {
-        viewModelScope.launch {
-            repository.removeModerator(uid)
-            _userMessage.value = "Модератор удалён"
-        }
-    }
-
-    fun setCurrentBook(book: BookEntity) {
-        viewModelScope.launch {
-            repository.setCurrentBook(book)
-        }
-    }
+    fun setCurrentBook(book: BookEntity) { viewModelScope.launch { repository.setCurrentBook(book) } }
+    
+    fun openMyBookDetail(book: BookEntity) { _currentScreen.value = Screen.MyBookDetail(book) }
 
     fun deleteBook(book: BookEntity) {
         viewModelScope.launch {
@@ -460,7 +418,6 @@ class MainViewModel(
     fun updateBookDetails(context: Context, book: BookEntity, newTitle: String, newAuthor: String, newCoverUri: String) {
         viewModelScope.launch {
             var finalCoverUri = newCoverUri
-            
             if (newCoverUri.isNotBlank() && newCoverUri.startsWith("content://")) {
                 try {
                     val inputStream = context.contentResolver.openInputStream(Uri.parse(newCoverUri))
@@ -470,11 +427,8 @@ class MainViewModel(
                     inputStream?.close()
                     outputStream.close()
                     finalCoverUri = file.absolutePath
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
+                } catch (e: Exception) { e.printStackTrace() }
             }
-
             val updated = book.copy(
                 title = newTitle.trim().ifBlank { "Без названия" },
                 author = newAuthor.trim().ifBlank { "Неизвестный автор" },
@@ -485,11 +439,7 @@ class MainViewModel(
         }
     }
 
-    fun saveReadingProgress(book: BookEntity, percent: Int) {
-        viewModelScope.launch {
-            repository.updateBook(book.copy(progressPercent = percent))
-        }
-    }
+    fun saveReadingProgress(book: BookEntity, percent: Int) { viewModelScope.launch { repository.updateBook(book.copy(progressPercent = percent)) } }
 
     fun openAdminPanel() { _currentScreen.value = Screen.AdminPanel }
     fun openAdminLibrary() { _currentScreen.value = Screen.AdminLibrary }
@@ -503,105 +453,59 @@ class MainViewModel(
 
     fun deletePublicBook(bookId: String) {
         if (bookId.isBlank()) return
-        if (!canManageBooks.value) {
-            _userMessage.value = "Недостаточно прав для удаления"
-            return
-        }
+        if (!canManageBooks.value) { _userMessage.value = "Недостаточно прав для удаления"; return }
         viewModelScope.launch {
             _isDeleting.value = true
             try {
                 repository.deletePublicBook(bookId)
                 _userMessage.value = "Книга удалена из общей библиотеки"
                 _currentScreen.value = Screen.AdminLibrary
-            } catch (e: Exception) {
-                _userMessage.value = "Ошибка удаления: ${e.localizedMessage}"
-            } finally {
-                _isDeleting.value = false
-            }
+            } catch (e: Exception) { _userMessage.value = "Ошибка удаления: ${e.localizedMessage}" } finally { _isDeleting.value = false }
         }
     }
 
     fun updatePublicBook(book: PublicBook) {
         if (book.id.isBlank()) return
-        if (!canManageBooks.value) {
-            _userMessage.value = "Недостаточно прав для редактирования"
-            return
-        }
+        if (!canManageBooks.value) { _userMessage.value = "Недостаточно прав для редактирования"; return }
         viewModelScope.launch {
             _isUpdatingBook.value = true
             try {
                 repository.updatePublicBook(book)
                 _editingBook.value = book
                 _userMessage.value = "Изменения сохранены"
-            } catch (e: Exception) {
-                _userMessage.value = "Ошибка обновления: ${e.localizedMessage}"
-            } finally {
-                _isUpdatingBook.value = false
-            }
+            } catch (e: Exception) { _userMessage.value = "Ошибка обновления: ${e.localizedMessage}" } finally { _isUpdatingBook.value = false }
         }
     }
 
     fun generateNewQuote() {
         viewModelScope.launch {
-            val canGenerate = repository.canGenerateVideo()
-            if (!canGenerate) {
-                _showLimitReachedDialog.value = true
-                _userMessage.value = "Суточный лимит 5/день исчерпан. Генерация заблокирована."
-                return@launch
-            }
-
-            val consumed = repository.consumeDailyGeneration()
-            if (!consumed) {
-                _showLimitReachedDialog.value = true
-                _userMessage.value = "Суточный лимит 5/день исчерпан. Генерация заблокирована."
-                return@launch
-            }
+            if (!repository.canGenerateVideo()) { _showLimitReachedDialog.value = true; _userMessage.value = "Суточный лимит 5/день исчерпан."; return@launch }
+            if (!repository.consumeDailyGeneration()) { _showLimitReachedDialog.value = true; _userMessage.value = "Суточный лимит 5/день исчерпан."; return@launch }
 
             _isAiThinking.value = true
             val book = currentBook.value
             val title = book?.title ?: "Алхимик"
             val author = book?.author ?: "Пауло Коэльо"
-
-            val result = repository.generateQuoteWithGemini(
-                bookTitle = title,
-                author = author,
-                customPrompt = "Вдохновляющая мысль для видеоролика о поиске своего пути и знаках судьбы"
-            )
-
+            val result = repository.generateQuoteWithGemini(title, author, "Вдохновляющая мысль для видеоролика о поиске своего пути и знаках судьбы")
             delay(1200)
             _isAiThinking.value = false
 
             result.onSuccess { quoteText ->
                 val newQuote = QuoteEntity(
-                    quoteText = quoteText,
-                    author = author,
-                    bookTitle = "«$title»",
-                    dateLabel = "Сегодня",
-                    bgRes = R.drawable.quote_bg_vertical,
-                    videoDuration = "0:24",
-                    isToday = true,
-                    isFavorite = true
+                    quoteText = quoteText, author = author, bookTitle = "«$title»", dateLabel = "Сегодня",
+                    bgRes = R.drawable.quote_bg_vertical, videoDuration = "0:24", isToday = true, isFavorite = true
                 )
                 repository.addQuote(newQuote)
                 _userMessage.value = "Видео с цитатой создано! (Осталось: ${dailyUsage.value.remainingCount})"
                 _currentScreen.value = Screen.VideoPlayer(newQuote)
-            }.onFailure { error ->
-                _userMessage.value = "Ошибка генерации: ${error.localizedMessage}"
-            }
+            }.onFailure { error -> _userMessage.value = "Ошибка генерации: ${error.localizedMessage}" }
         }
     }
 
-    fun loadBookFromPdf(
-        context: Context,
-        uri: Uri,
-        title: String = "",
-        author: String = "",
-        coverUri: String = ""
-    ) {
+    fun loadBookFromPdf(context: Context, uri: Uri, title: String = "", author: String = "", coverUri: String = "") {
         viewModelScope.launch {
             _isAiThinking.value = true
             _userMessage.value = "Читаем PDF-файл..."
-
             var finalCoverUri = coverUri
             if (coverUri.isNotBlank() && coverUri.startsWith("content://")) {
                 try {
@@ -612,63 +516,34 @@ class MainViewModel(
                     inputStream?.close()
                     outputStream.close()
                     finalCoverUri = file.absolutePath
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
+                } catch (e: Exception) { e.printStackTrace() }
             }
 
-            val pdfParser = PdfParser(context)
-            val result = pdfParser.extractTextFromPdf(uri)
-
+            val result = PdfParser(context).extractTextFromPdf(uri)
             result.onSuccess { text ->
                 val newBook = BookEntity(
-                    title = title.ifBlank { "Загруженная книга" },
-                    author = author.ifBlank { "Неизвестный автор" },
-                    coverRes = R.drawable.book_cover_alchemist,
-                    totalChapters = 1,
-                    currentChapter = 1,
-                    progressPercent = 0,
-                    generatedQuotesCount = 0,
-                    textContent = text,
-                    isCurrent = true,
-                    coverUri = finalCoverUri
+                    title = title.ifBlank { "Загруженная книга" }, author = author.ifBlank { "Неизвестный автор" },
+                    coverRes = R.drawable.book_cover_alchemist, totalChapters = 1, currentChapter = 1,
+                    progressPercent = 0, generatedQuotesCount = 0, textContent = text, isCurrent = true, coverUri = finalCoverUri
                 )
                 repository.addBook(newBook)
-                _userMessage.value = "Книга успешно загружена! Текст готов к чтению."
-            }.onFailure { error ->
-                _userMessage.value = "Ошибка чтения PDF: ${error.localizedMessage}"
-            }
-
+                _userMessage.value = "Книга успешно загружена!"
+            }.onFailure { error -> _userMessage.value = "Ошибка чтения PDF: ${error.localizedMessage}" }
             _isAiThinking.value = false
         }
     }
 
-    fun sendSurpriseGift(
-        receiver: FriendEntity,
-        formatType: String,
-        durationSeconds: Int,
-        quote: QuoteEntity? = null
-    ) {
+    fun sendSurpriseGift(receiver: FriendEntity, formatType: String, durationSeconds: Int, quote: QuoteEntity? = null) {
         viewModelScope.launch {
             val q = quote ?: todayQuote.value
             val surprise = SurpriseEntity(
-                senderName = "Вы",
-                receiverName = receiver.name,
-                quoteText = q?.quoteText ?: "«Иногда именно потеря показывает нам, что по-настоящему важно.»",
-                author = q?.author ?: "Пауло Коэльо",
-                bookTitle = q?.bookTitle ?: "«Алхимик»",
-                formatType = formatType,
-                durationSeconds = durationSeconds,
-                isOpened = false
+                senderName = "Вы", receiverName = receiver.name, quoteText = q?.quoteText ?: "«Иногда именно потеря показывает нам, что по-настоящему важно.»",
+                author = q?.author ?: "Пауло Коэльо", bookTitle = q?.bookTitle ?: "«Алхимик»", formatType = formatType, durationSeconds = durationSeconds, isOpened = false
             )
             repository.sendSurprise(surprise)
             _userMessage.value = "Сюрприз отправлен для ${receiver.name}!"
             _currentScreen.value = Screen.Friends
         }
-    }
-
-    fun clearMessage() {
-        _userMessage.value = null
     }
 
     override fun onCleared() {

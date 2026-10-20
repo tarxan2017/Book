@@ -25,9 +25,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MenuBook
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -59,7 +59,6 @@ import coil.compose.AsyncImage
 import com.example.data.local.entity.BookEntity
 import com.example.ui.theme.PlayfairDisplayFontFamily
 import com.example.ui.viewmodel.MainViewModel
-import com.example.ui.viewmodel.Screen
 
 @Composable
 fun MyBookScreen(
@@ -177,8 +176,8 @@ fun MyBookScreen(
                     BookShelfItem(
                         book = book,
                         onClick = {
-                            viewModel.setCurrentBook(book)
-                            viewModel.navigateTo(Screen.Reader)
+                            // ТЕПЕРЬ ОТКРЫВАЕТСЯ ЭКРАН "О КНИГЕ", А НЕ ЧИТАЛКА СРАЗУ
+                            viewModel.openMyBookDetail(book)
                         },
                         onEditClick = {
                             editingBook = book
@@ -191,49 +190,8 @@ fun MyBookScreen(
             }
         }
 
-        Spacer(modifier = Modifier.height(32.dp))
-
-        // === УПРАВЛЕНИЕ КНИГАМИ ===
-        Surface(
-            shape = RoundedCornerShape(20.dp),
-            color = MaterialTheme.colorScheme.surface,
-            border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .clickable { viewModel.navigateTo(Screen.BookList) }
-                .testTag("manage_books_card")
-        ) {
-            Row(
-                modifier = Modifier.padding(18.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Settings,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(14.dp))
-                    Column {
-                        Text(
-                            text = "Управление книгами",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Text(
-                            text = "Удаление и смена текущей книги",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-            }
-        }
-
+        // Убрали огромную плашку "Управление книгами", чтобы не резала глаз
+        
         Spacer(modifier = Modifier.height(40.dp))
     }
 
@@ -305,7 +263,7 @@ fun MyBookScreen(
         }
     }
 
-    // === ДИАЛОГ: РЕДАКТИРОВАНИЕ КНИГИ ===
+    // === ДИАЛОГ: РЕДАКТИРОВАНИЕ КНИГИ (И УДАЛЕНИЕ) ===
     if (editingBook != null) {
         Dialog(onDismissRequest = { editingBook = null }) {
             Surface(
@@ -347,26 +305,45 @@ fun MyBookScreen(
                     }
 
                     Spacer(modifier = Modifier.height(24.dp))
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                        TextButton(onClick = { editingBook = null }) {
-                            Text("Отмена", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Button(
+                    
+                    // Ряд с кнопками (Удалить слева, Отмена/Сохранить справа)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(), 
+                        horizontalArrangement = Arrangement.SpaceBetween, // Разносим Удалить и остальное
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // НОВАЯ КНОПКА УДАЛЕНИЯ
+                        TextButton(
                             onClick = {
-                                // Передаем context, чтобы скопировать обложку
-                                viewModel.updateBookDetails(
-                                    context = context,
-                                    book = editingBook!!,
-                                    newTitle = editTitle,
-                                    newAuthor = editAuthor,
-                                    newCoverUri = editCoverUri
-                                )
+                                viewModel.deleteBook(editingBook!!)
                                 editingBook = null
-                            },
-                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                            }
                         ) {
-                            Text("Сохранить")
+                            Icon(Icons.Default.Delete, contentDescription = "Удалить", tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(20.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Удалить", color = MaterialTheme.colorScheme.error)
+                        }
+
+                        Row {
+                            TextButton(onClick = { editingBook = null }) {
+                                Text("Отмена", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Button(
+                                onClick = {
+                                    viewModel.updateBookDetails(
+                                        context = context,
+                                        book = editingBook!!,
+                                        newTitle = editTitle,
+                                        newAuthor = editAuthor,
+                                        newCoverUri = editCoverUri
+                                    )
+                                    editingBook = null
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                            ) {
+                                Text("Сохранить")
+                            }
                         }
                     }
                 }
@@ -403,7 +380,7 @@ private fun BookShelfItem(
                     modifier = Modifier.fillMaxSize()
                 )
             } else {
-                // Стильный плейсхолдер вместо Алхимика
+                // Стильный плейсхолдер
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
