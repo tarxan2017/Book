@@ -6,7 +6,7 @@ import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.R
-import com.example.data.PdfParser
+import com.example.data.BookParser
 import com.example.data.datastore.DailyUsage
 import com.example.data.local.entity.BookEntity
 import com.example.data.local.entity.FriendEntity
@@ -239,7 +239,7 @@ class MainViewModel(
             val result = repository.deleteComment(commentId)
             result.onSuccess {
                 _userMessage.value = "Комментарий удален"
-                fetchComments(bookId) // Обновляем список
+                fetchComments(bookId)
             }.onFailure { error ->
                 _userMessage.value = "Ошибка удаления: ${error.localizedMessage}"
             }
@@ -514,10 +514,11 @@ class MainViewModel(
         }
     }
 
-    fun loadBookFromPdf(context: Context, uri: Uri, title: String = "", author: String = "", coverUri: String = "") {
+    // ОБНОВЛЕНО: Используем BookParser вместо PdfParser и поддерживаем EPUB/FB2
+    fun loadBookFromFile(context: Context, uri: Uri, title: String = "", author: String = "", coverUri: String = "") {
         viewModelScope.launch {
             _isAiThinking.value = true
-            _userMessage.value = "Читаем PDF-файл..."
+            _userMessage.value = "Читаем файл книги..."
             var finalCoverUri = coverUri
             if (coverUri.isNotBlank() && coverUri.startsWith("content://")) {
                 try {
@@ -531,7 +532,7 @@ class MainViewModel(
                 } catch (e: Exception) { e.printStackTrace() }
             }
 
-            val result = PdfParser(context).extractTextFromPdf(uri)
+            val result = BookParser(context).extractTextFromBook(uri)
             result.onSuccess { text ->
                 val newBook = BookEntity(
                     title = title.ifBlank { "Загруженная книга" }, author = author.ifBlank { "Неизвестный автор" },
@@ -540,7 +541,7 @@ class MainViewModel(
                 )
                 repository.addBook(newBook)
                 _userMessage.value = "Книга успешно загружена!"
-            }.onFailure { error -> _userMessage.value = "Ошибка чтения PDF: ${error.localizedMessage}" }
+            }.onFailure { error -> _userMessage.value = "Ошибка чтения: ${error.localizedMessage}" }
             _isAiThinking.value = false
         }
     }

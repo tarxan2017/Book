@@ -2,7 +2,7 @@ package com.example.repository
 
 import android.content.Context
 import android.net.Uri
-import com.example.data.PdfParser
+import com.example.data.BookParser
 import com.example.data.auth.GoogleAuthManager
 import com.example.data.datastore.DailyGenerationService
 import com.example.data.datastore.DailyUsage
@@ -186,6 +186,7 @@ class LivingPageRepository(
     }
 
     suspend fun downloadPublicBook(context: Context, book: PublicBook): Result<Uri> {
+        // === ПРОВЕРКА НА ДУБЛИКАТ ===
         val existingBooks = dao.getAllBooks().first()
         val existingBook = existingBooks.find { 
             it.title.trim().equals(book.title.trim(), ignoreCase = true) && 
@@ -198,14 +199,15 @@ class LivingPageRepository(
             return Result.success(Uri.parse(existingBook.coverUri ?: ""))
         }
 
+        // === ЕСЛИ КНИГИ НЕТ, СКАЧИВАЕМ ===
         if (book.pdfFileId.isBlank()) {
-            return Result.failure(Exception("У этой книги нет PDF-файла"))
+            return Result.failure(Exception("У этой книги нет файла"))
         }
 
         val pdfUri = telegramBotService.downloadByFileId(
             fileId = book.pdfFileId,
             fileName = "book_${book.id}.pdf"
-        ) ?: return Result.failure(Exception("Не удалось скачать PDF"))
+        ) ?: return Result.failure(Exception("Не удалось скачать файл"))
 
         val coverUri = if (book.coverFileId.isNotBlank()) {
             telegramBotService.downloadByFileId(
@@ -216,9 +218,14 @@ class LivingPageRepository(
             null
         }
 
-        val pdfParser = PdfParser(context)
-        val textResult = pdfParser.extractTextFromPdf(pdfUri)
+        val bookParser = BookParser(context)
+        val textResult = bookParser.extractTextFromBook(pdfUri)
         val textContent = textResult.getOrNull() ?: ""
+
+        // ЗАЩИТА: Если текст не извлекся, прерываем скачивание
+        if (textContent.isBlank()) {
+            return Result.failure(Exception("Не удалось извлечь текст. Возможно, файл поврежден или это сканы без текстового слоя."))
+        }
 
         dao.clearCurrentBook()
 
@@ -358,7 +365,6 @@ class LivingPageRepository(
         }
     }
 
-    // НОВАЯ ФУНКЦИЯ УДАЛЕНИЯ КОММЕНТАРИЯ
     suspend fun deleteComment(commentId: Int): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             val user = currentUser.value

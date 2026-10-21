@@ -1,6 +1,7 @@
 package com.example.ui.screens
 
 import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -69,8 +71,9 @@ fun MyBookScreen(
     val context = LocalContext.current
 
     // Состояние диалога ДОБАВЛЕНИЯ новой книги
+    var showAddMenu by remember { mutableStateOf(false) }
     var showAddDialog by remember { mutableStateOf(false) }
-    var pendingPdfUri by remember { mutableStateOf<Uri?>(null) }
+    var pendingFileUri by remember { mutableStateOf<Uri?>(null) }
     var tempTitle by remember { mutableStateOf("") }
     var tempAuthor by remember { mutableStateOf("") }
     var tempCoverUri by remember { mutableStateOf("") }
@@ -81,12 +84,12 @@ fun MyBookScreen(
     var editAuthor by remember { mutableStateOf("") }
     var editCoverUri by remember { mutableStateOf("") }
 
-    // Лаунчер для выбора PDF
-    val pdfPickerLauncher = rememberLauncherForActivityResult(
+    // Лаунчер для выбора ФАЙЛА КНИГИ (PDF, EPUB, FB2)
+    val bookPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
         if (uri != null) {
-            pendingPdfUri = uri
+            pendingFileUri = uri
             tempTitle = ""
             tempAuthor = ""
             tempCoverUri = ""
@@ -137,12 +140,12 @@ fun MyBookScreen(
             )
 
             IconButton(
-                onClick = { pdfPickerLauncher.launch(arrayOf("application/pdf")) },
+                onClick = { showAddMenu = true }, // Открываем меню выбора (Загрузить или Написать)
                 modifier = Modifier.testTag("my_book_add_button")
             ) {
                 Icon(
                     imageVector = Icons.Default.Add,
-                    contentDescription = "Добавить книгу",
+                    contentDescription = "Добавить",
                     tint = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.size(28.dp)
                 )
@@ -160,7 +163,7 @@ fun MyBookScreen(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "У вас пока нет книг.\nНажмите +, чтобы загрузить.",
+                    text = "У вас пока нет книг.\nНажмите +, чтобы загрузить или написать.",
                     textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     style = MaterialTheme.typography.bodyMedium
@@ -176,7 +179,6 @@ fun MyBookScreen(
                     BookShelfItem(
                         book = book,
                         onClick = {
-                            // ТЕПЕРЬ ОТКРЫВАЕТСЯ ЭКРАН "О КНИГЕ", А НЕ ЧИТАЛКА СРАЗУ
                             viewModel.openMyBookDetail(book)
                         },
                         onEditClick = {
@@ -190,13 +192,48 @@ fun MyBookScreen(
             }
         }
 
-        // Убрали огромную плашку "Управление книгами", чтобы не резала глаз
-        
         Spacer(modifier = Modifier.height(40.dp))
     }
 
-    // === ДИАЛОГ: ДОБАВЛЕНИЕ НОВОЙ КНИГИ ===
-    if (showAddDialog && pendingPdfUri != null) {
+    // === ДИАЛОГ ВЫБОРА: ЗАГРУЗИТЬ ИЛИ НАПИСАТЬ ===
+    if (showAddMenu) {
+        AlertDialog(
+            onDismissRequest = { showAddMenu = false },
+            title = { Text("Добавить в библиотеку", fontFamily = PlayfairDisplayFontFamily, fontWeight = FontWeight.Bold) },
+            text = { Text("Вы хотите загрузить готовый файл книги или написать свою?") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showAddMenu = false
+                        // Разрешаем выбирать PDF, EPUB и FB2
+                        bookPickerLauncher.launch(arrayOf(
+                            "application/pdf", 
+                            "application/epub+zip", 
+                            "application/x-fictionbook+xml",
+                            "text/xml",
+                            "application/octet-stream"
+                        ))
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                ) {
+                    Text("Загрузить файл")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showAddMenu = false
+                        Toast.makeText(context, "Редактор книг появится в следующем обновлении!", Toast.LENGTH_LONG).show()
+                    }
+                ) {
+                    Text("Написать книгу", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                }
+            }
+        )
+    }
+
+    // === ДИАЛОГ: ДОБАВЛЕНИЕ НОВОЙ КНИГИ (ИЗ ФАЙЛА) ===
+    if (showAddDialog && pendingFileUri != null) {
         Dialog(onDismissRequest = { showAddDialog = false }) {
             Surface(
                 shape = RoundedCornerShape(24.dp),
@@ -244,9 +281,10 @@ fun MyBookScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         Button(
                             onClick = {
-                                viewModel.loadBookFromPdf(
+                                // ИСПОЛЬЗУЕМ НОВУЮ ФУНКЦИЮ loadBookFromFile
+                                viewModel.loadBookFromFile(
                                     context = context,
-                                    uri = pendingPdfUri!!,
+                                    uri = pendingFileUri!!,
                                     title = tempTitle,
                                     author = tempAuthor,
                                     coverUri = tempCoverUri
@@ -306,13 +344,11 @@ fun MyBookScreen(
 
                     Spacer(modifier = Modifier.height(24.dp))
                     
-                    // Ряд с кнопками (Удалить слева, Отмена/Сохранить справа)
                     Row(
                         modifier = Modifier.fillMaxWidth(), 
-                        horizontalArrangement = Arrangement.SpaceBetween, // Разносим Удалить и остальное
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        // НОВАЯ КНОПКА УДАЛЕНИЯ
                         TextButton(
                             onClick = {
                                 viewModel.deleteBook(editingBook!!)
@@ -364,7 +400,6 @@ private fun BookShelfItem(
             .width(110.dp)
             .clickable(onClick = onClick)
     ) {
-        // Обложка с плейсхолдером
         Box(
             modifier = Modifier
                 .size(width = 110.dp, height = 160.dp)
@@ -380,7 +415,6 @@ private fun BookShelfItem(
                     modifier = Modifier.fillMaxSize()
                 )
             } else {
-                // Стильный плейсхолдер
                 Box(
                     modifier = Modifier.fillMaxSize(),
                     contentAlignment = Alignment.Center
@@ -394,7 +428,6 @@ private fun BookShelfItem(
                 }
             }
 
-            // Кнопка редактирования (карандаш) в углу
             IconButton(
                 onClick = onEditClick,
                 modifier = Modifier
@@ -411,7 +444,6 @@ private fun BookShelfItem(
                 )
             }
 
-            // Процент прогресса внизу
             if (book.progressPercent > 0) {
                 Surface(
                     color = MaterialTheme.colorScheme.background.copy(alpha = 0.8f),
