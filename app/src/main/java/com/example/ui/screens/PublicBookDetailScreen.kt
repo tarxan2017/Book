@@ -23,8 +23,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -35,6 +37,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -69,6 +72,7 @@ fun PublicBookDetailScreen(
 ) {
     val isDownloading by viewModel.isDownloading.collectAsStateWithLifecycle()
     val coverUrls by viewModel.coverUrls.collectAsStateWithLifecycle()
+    val currentUser by viewModel.currentUser.collectAsStateWithLifecycle()
     
     // Состояния для комментариев
     val comments by viewModel.comments.collectAsStateWithLifecycle()
@@ -79,6 +83,9 @@ fun PublicBookDetailScreen(
     val scrollState = rememberScrollState()
     
     var commentText by remember { mutableStateOf("") }
+    
+    // Состояние для диалога удаления
+    var commentToDeleteId by remember { mutableStateOf<Int?>(null) }
 
     val coverUrl = coverUrls[book.coverFileId]
 
@@ -225,7 +232,6 @@ fun PublicBookDetailScreen(
         Spacer(modifier = Modifier.height(12.dp))
 
         if (isCommentsLoading && comments.isEmpty()) {
-            // Индикатор загрузки (только если список пуст)
             Box(
                 modifier = Modifier.fillMaxWidth().height(100.dp),
                 contentAlignment = Alignment.Center
@@ -233,7 +239,6 @@ fun PublicBookDetailScreen(
                 CircularProgressIndicator(color = MaterialTheme.colorScheme.primary)
             }
         } else if (comments.isEmpty()) {
-            // Если комментариев нет
             Text(
                 text = "Пока нет комментариев. Будьте первым!",
                 style = MaterialTheme.typography.bodyMedium,
@@ -241,12 +246,15 @@ fun PublicBookDetailScreen(
                 modifier = Modifier.padding(vertical = 12.dp)
             )
         } else {
-            // Выводим реальные комментарии из базы
             comments.forEach { comment ->
+                val isMine = currentUser?.uid != null && comment.user_id == currentUser?.uid
+                
                 CommentItem(
                     userName = comment.user_name,
                     text = comment.text,
-                    date = formatCommentDate(comment.created_at)
+                    date = formatCommentDate(comment.created_at),
+                    isMine = isMine,
+                    onDeleteClick = { commentToDeleteId = comment.id }
                 )
             }
         }
@@ -279,7 +287,7 @@ fun PublicBookDetailScreen(
                         onClick = { 
                             if (commentText.isNotBlank()) {
                                 viewModel.sendComment(book.id, commentText) {
-                                    commentText = "" // Очищаем поле после успешной отправки
+                                    commentText = "" 
                                 }
                             }
                         }
@@ -369,6 +377,30 @@ fun PublicBookDetailScreen(
 
         Spacer(modifier = Modifier.height(30.dp))
     }
+
+    // === ДИАЛОГ ПОДТВЕРЖДЕНИЯ УДАЛЕНИЯ ===
+    if (commentToDeleteId != null) {
+        AlertDialog(
+            onDismissRequest = { commentToDeleteId = null },
+            title = { Text("Удалить комментарий?") },
+            text = { Text("Вы уверены, что хотите удалить свой комментарий? Это действие нельзя отменить.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        viewModel.deleteComment(commentToDeleteId!!, book.id)
+                        commentToDeleteId = null
+                    }
+                ) {
+                    Text("Удалить", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { commentToDeleteId = null }) {
+                    Text("Отмена", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+        )
+    }
 }
 
 // === КОМПОНЕНТ ОДНОГО КОММЕНТАРИЯ ===
@@ -376,7 +408,9 @@ fun PublicBookDetailScreen(
 private fun CommentItem(
     userName: String,
     text: String,
-    date: String
+    date: String,
+    isMine: Boolean,
+    onDeleteClick: () -> Unit
 ) {
     Row(
         modifier = Modifier
@@ -402,8 +436,11 @@ private fun CommentItem(
 
         Spacer(modifier = Modifier.width(12.dp))
 
-        Column {
-            Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(modifier = Modifier.weight(1f)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
                 Text(
                     text = userName,
                     style = MaterialTheme.typography.bodyMedium,
@@ -416,6 +453,22 @@ private fun CommentItem(
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                
+                // Кнопка удаления (только для своих комментариев)
+                if (isMine) {
+                    Spacer(modifier = Modifier.weight(1f))
+                    IconButton(
+                        onClick = onDeleteClick,
+                        modifier = Modifier.size(24.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Delete,
+                            contentDescription = "Удалить комментарий",
+                            tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
+                            modifier = Modifier.size(16.dp)
+                        )
+                    }
+                }
             }
             Spacer(modifier = Modifier.height(2.dp))
             Text(
@@ -427,7 +480,7 @@ private fun CommentItem(
     }
 }
 
-// Функция для форматирования даты (из миллисекунд в читаемый вид)
+// Функция для форматирования даты
 private fun formatCommentDate(timestamp: Long): String {
     if (timestamp == 0L) return ""
     val sdf = SimpleDateFormat("dd MMM, HH:mm", Locale.getDefault())

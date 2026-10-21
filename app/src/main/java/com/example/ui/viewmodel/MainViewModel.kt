@@ -225,12 +225,24 @@ class MainViewModel(
             _isCommentSending.value = true
             val result = repository.postComment(bookId, text)
             result.onSuccess {
-                onSuccess() // Очищаем поле ввода в UI
-                fetchComments(bookId) // Обновляем ленту
+                onSuccess()
+                fetchComments(bookId)
             }.onFailure { error ->
                 _userMessage.value = "Ошибка отправки: ${error.localizedMessage}"
             }
             _isCommentSending.value = false
+        }
+    }
+
+    fun deleteComment(commentId: Int, bookId: String) {
+        viewModelScope.launch {
+            val result = repository.deleteComment(commentId)
+            result.onSuccess {
+                _userMessage.value = "Комментарий удален"
+                fetchComments(bookId) // Обновляем список
+            }.onFailure { error ->
+                _userMessage.value = "Ошибка удаления: ${error.localizedMessage}"
+            }
         }
     }
 
@@ -262,7 +274,7 @@ class MainViewModel(
     fun openPublicBook(book: PublicBook) {
         _selectedPublicBook.value = book
         _currentScreen.value = Screen.PublicBookDetail(book)
-        fetchComments(book.id) // Автоматически загружаем комменты при открытии
+        fetchComments(book.id)
     }
 
     fun openPublicLibrary() {

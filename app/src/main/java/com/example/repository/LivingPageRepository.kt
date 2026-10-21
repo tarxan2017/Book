@@ -46,7 +46,6 @@ class LivingPageRepository(
     private val telegramBotService: TelegramBotService
 ) {
 
-    // Клиент для запросов к нашему API комментариев
     private val okHttpClient = OkHttpClient()
 
     val currentUser: StateFlow<FirebaseUser?> = authManager.currentUser
@@ -187,7 +186,6 @@ class LivingPageRepository(
     }
 
     suspend fun downloadPublicBook(context: Context, book: PublicBook): Result<Uri> {
-        // === ПРОВЕРКА НА ДУБЛИКАТ ===
         val existingBooks = dao.getAllBooks().first()
         val existingBook = existingBooks.find { 
             it.title.trim().equals(book.title.trim(), ignoreCase = true) && 
@@ -200,7 +198,6 @@ class LivingPageRepository(
             return Result.success(Uri.parse(existingBook.coverUri ?: ""))
         }
 
-        // === ЕСЛИ КНИГИ НЕТ, СКАЧИВАЕМ ===
         if (book.pdfFileId.isBlank()) {
             return Result.failure(Exception("У этой книги нет PDF-файла"))
         }
@@ -298,7 +295,7 @@ class LivingPageRepository(
     fun openTtsSettings() = ttsManager.openTtsSettings()
 
     // ==========================================
-    // НОВЫЕ ФУНКЦИИ ДЛЯ РАБОТЫ С КОММЕНТАРИЯМИ
+    // ФУНКЦИИ ДЛЯ РАБОТЫ С КОММЕНТАРИЯМИ
     // ==========================================
 
     suspend fun getComments(bookId: String): Result<List<Comment>> = withContext(Dispatchers.IO) {
@@ -350,6 +347,32 @@ class LivingPageRepository(
             val request = Request.Builder()
                 .url("https://livingpage-api.taxo2015.workers.dev/api/comments")
                 .post(body)
+                .build()
+
+            val response = okHttpClient.newCall(request).execute()
+            if (!response.isSuccessful) throw Exception("Ошибка сервера: ${response.code}")
+
+            Result.success(Unit)
+        } catch (e: Exception) {
+            Result.failure(e)
+        }
+    }
+
+    // НОВАЯ ФУНКЦИЯ УДАЛЕНИЯ КОММЕНТАРИЯ
+    suspend fun deleteComment(commentId: Int): Result<Unit> = withContext(Dispatchers.IO) {
+        try {
+            val user = currentUser.value
+            val userId = user?.uid ?: "anonymous"
+
+            val json = JSONObject().apply {
+                put("commentId", commentId)
+                put("userId", userId)
+            }
+            val body = json.toString().toRequestBody("application/json".toMediaType())
+            
+            val request = Request.Builder()
+                .url("https://livingpage-api.taxo2015.workers.dev/api/comments")
+                .delete(body)
                 .build()
 
             val response = okHttpClient.newCall(request).execute()
