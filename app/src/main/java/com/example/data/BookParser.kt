@@ -182,7 +182,14 @@ class BookParser(private val context: Context) {
             // Если FB2 нет, значит это EPUB (обрабатываем HTML)
             textFiles.sortBy { it.first }
             for ((_, htmlContent) in textFiles) {
-                val cleanText = Html.fromHtml(htmlContent, Html.FROM_HTML_MODE_LEGACY).toString().trim()
+                var processedHtml = htmlContent
+                
+                // ЖЕСТКАЯ ОЧИСТКА: удаляем head, style и script вместе с их содержимым
+                processedHtml = processedHtml.replace(Regex("""<head[^>]*>.*?</head>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
+                processedHtml = processedHtml.replace(Regex("""<style[^>]*>.*?</style>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
+                processedHtml = processedHtml.replace(Regex("""<script[^>]*>.*?</script>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
+
+                val cleanText = Html.fromHtml(processedHtml, Html.FROM_HTML_MODE_LEGACY).toString().trim()
                 // Берем только куски с нормальным текстом (защита от мусора)
                 if (cleanText.length > 100) {
                     textBuilder.append(cleanText).append("\n\n")

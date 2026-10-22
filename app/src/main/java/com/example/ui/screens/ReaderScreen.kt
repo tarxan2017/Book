@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -31,6 +32,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
+import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
@@ -63,15 +65,19 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
 import com.example.data.local.entity.BookEntity
 import com.example.ui.theme.InterFontFamily
 import com.example.ui.theme.PlayfairDisplayFontFamily
@@ -94,7 +100,7 @@ private val themeWhite = ReaderTheme("Белый", Color(0xFFFDFBF7), Color(0xFF
 private val themeSepia = ReaderTheme("Сепия", Color(0xFFF4ECD8), Color(0xFF5B4636), Color(0xFFEBDDBD), Color(0xFFC09A60))
 private val themeDark = ReaderTheme("Чёрный", Color(0xFF130F0C), Color(0xFFE8E1D9), Color(0xFF1E1712), Color(0xFFE5B064))
 
-// МОЩНАЯ ОЧИСТКА ТЕКСТА ДЛЯ TTS
+// МОЩНАЯ ОЧИСТКА ТЕКСТА ДЛЯ TTS (без картинок, только текст)
 private fun cleanTextForTts(text: String): String {
     return text
         // 1. Убираем ссылки (http, https, www)
@@ -145,6 +151,9 @@ fun ReaderScreen(
 
     var isAutoScrolling by remember { mutableStateOf(false) }
 
+    // ПЕРЕМЕННАЯ ДЛЯ ЭКРАНА ОБЛОЖКИ
+    var showCover by remember { mutableStateOf(true) }
+
     val pages = remember(book.textContent, fontSize) {
         if (book.textContent.isBlank()) listOf("Книга пуста")
         else chunkText(book.textContent, chunkSize = (1200 * (17f / fontSize)).toInt())
@@ -183,7 +192,6 @@ fun ReaderScreen(
     DisposableEffect(Unit) {
         viewModel.setOnTtsFinishedListener {
             if (playingPage < currentPages.size - 1) {
-                // ВАЖНО: Ставим флаг ДО запуска анимации, чтобы читалка не думала, что это ручной свайп
                 isAutoScrolling = true
                 playingPage++
                 viewModel.speakText(cleanTextForTts(currentPages[playingPage]))
@@ -246,7 +254,7 @@ fun ReaderScreen(
 
         // === ВЕРХНЯЯ ПАНЕЛЬ (ПЛЕЕР) ===
         AnimatedVisibility(
-            visible = controlsVisible,
+            visible = controlsVisible && !showCover,
             enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
             exit = slideOutVertically(targetOffsetY = { -it }) + fadeOut(),
             modifier = Modifier.align(Alignment.TopCenter)
@@ -339,7 +347,7 @@ fun ReaderScreen(
 
         // === НИЖНЯЯ ПАНЕЛЬ ===
         AnimatedVisibility(
-            visible = controlsVisible,
+            visible = controlsVisible && !showCover,
             enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
             exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter)
@@ -370,6 +378,90 @@ fun ReaderScreen(
                             Icon(Icons.Default.Settings, "Настройки", tint = currentTheme.accent)
                         }
                     }
+                }
+            }
+        }
+
+        // === ЭКРАН ОБЛОЖКИ (ЗАКРЫТАЯ КНИГА) ===
+        AnimatedVisibility(
+            visible = showCover,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(currentTheme.bg)
+                    // При нажатии на экран обложка исчезает
+                    .pointerInput(Unit) {
+                        detectTapGestures(onTap = { showCover = false })
+                    },
+                contentAlignment = Alignment.Center
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.padding(32.dp)
+                ) {
+                    // Обложка книги
+                    if (book.coverUri.isNotBlank()) {
+                        AsyncImage(
+                            model = book.coverUri,
+                            contentDescription = book.title,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxWidth(0.75f)
+                                .aspectRatio(0.68f)
+                                .clip(RoundedCornerShape(16.dp))
+                        )
+                    } else {
+                        // Заглушка, если обложки нет
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth(0.75f)
+                                .aspectRatio(0.68f)
+                                .background(currentTheme.surface)
+                                .clip(RoundedCornerShape(16.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.MenuBook,
+                                contentDescription = null,
+                                tint = currentTheme.accent,
+                                modifier = Modifier.size(64.dp)
+                            )
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(24.dp))
+                    
+                    Text(
+                        text = book.title,
+                        style = MaterialTheme.typography.titleLarge.copy(
+                            fontFamily = PlayfairDisplayFontFamily,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 24.sp
+                        ),
+                        color = currentTheme.text,
+                        textAlign = TextAlign.Center
+                    )
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    Text(
+                        text = book.author,
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = currentTheme.text.copy(alpha = 0.7f),
+                        textAlign = TextAlign.Center
+                    )
+
+                    Spacer(modifier = Modifier.height(48.dp))
+                    
+                    Text(
+                        text = "Нажмите, чтобы открыть",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = currentTheme.accent
+                    )
                 }
             }
         }
