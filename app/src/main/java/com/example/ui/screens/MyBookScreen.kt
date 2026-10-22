@@ -84,7 +84,7 @@ fun MyBookScreen(
     var editAuthor by remember { mutableStateOf("") }
     var editCoverUri by remember { mutableStateOf("") }
 
-    // Лаунчер для выбора ФАЙЛА КНИГИ (PDF, EPUB, FB2)
+    // Лаунчер для выбора ФАЙЛА КНИГИ (PDF, EPUB, FB2, ZIP)
     val bookPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri ->
@@ -205,11 +205,13 @@ fun MyBookScreen(
                 Button(
                     onClick = {
                         showAddMenu = false
-                        // Разрешаем выбирать PDF, EPUB и FB2
+                        // ДОБАВЛЕНЫ ТИПЫ ДЛЯ ZIP: application/zip и application/x-zip-compressed
                         bookPickerLauncher.launch(arrayOf(
                             "application/pdf", 
                             "application/epub+zip", 
                             "application/x-fictionbook+xml",
+                            "application/zip",
+                            "application/x-zip-compressed",
                             "text/xml",
                             "application/octet-stream"
                         ))

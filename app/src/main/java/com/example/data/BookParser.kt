@@ -25,7 +25,7 @@ class BookParser(private val context: Context) {
         try {
             val format = detectFormat(uri)
             val text = when (format) {
-                "epub", "zip" -> parseZip(uri) // Если это ZIP, ищем внутри и HTML, и FB2
+                "epub", "zip" -> parseZip(uri)
                 "fb2" -> parseFb2(uri)
                 else -> parsePdf(uri)
             }
@@ -50,7 +50,7 @@ class BookParser(private val context: Context) {
                 if (buffered.read(header) >= 4) {
                     buffered.reset()
                     if (header[0] == 0x25.toByte() && header[1] == 0x50.toByte() && header[2] == 0x44.toByte() && header[3] == 0x46.toByte()) return "pdf"
-                    if (header[0] == 0x50.toByte() && header[1] == 0x4B.toByte()) return "zip" // EPUB или ZIP
+                    if (header[0] == 0x50.toByte() && header[1] == 0x4B.toByte()) return "zip"
                     if (header[0] == 0x3C.toByte()) return "fb2"
                 }
             }
@@ -93,11 +93,25 @@ class BookParser(private val context: Context) {
     }
 
     private fun parseFb2(uri: Uri): String {
-        val inputStream = context.contentResolver.openInputStream(uri) ?: throw Exception("Не удалось открыть FB2")
-        return inputStream.use { parseFb2Stream(it) }
+        val inputStream = context.contentResolver.openInputStream(uri) ?: throw Exception("Не удалось открыть файл")
+        return inputStream.use { stream ->
+            val buffered = BufferedInputStream(stream)
+            buffered.mark(500)
+            val headerBytes = ByteArray(500)
+            val read = buffered.read(headerBytes)
+            buffered.reset()
+            
+            val headerStr = if (read > 0) String(headerBytes, 0, read, Charsets.UTF_8).lowercase() else ""
+            
+            if (headerStr.contains("<html") || headerStr.contains("<!doctype html")) {
+                val htmlContent = buffered.readBytes().toString(Charsets.UTF_8)
+                Html.fromHtml(htmlContent, Html.FROM_HTML_MODE_LEGACY).toString()
+            } else {
+                parseFb2Stream(buffered)
+            }
+        }
     }
 
-    // Безопасный парсер XML, который не ломается на вложенных тегах
     private fun parseFb2Stream(stream: InputStream): String {
         val textBuilder = StringBuilder()
         val parser = Xml.newPullParser()
@@ -110,23 +124,16 @@ class BookParser(private val context: Context) {
         while (eventType != XmlPullParser.END_DOCUMENT) {
             when (eventType) {
                 XmlPullParser.START_TAG -> {
-                    if (parser.name.equals("body", ignoreCase = true)) {
-                        insideBody = true
-                    }
+                    if (parser.name.equals("body", ignoreCase = true)) insideBody = true
                 }
                 XmlPullParser.TEXT -> {
                     if (insideBody) {
                         val text = parser.text
-                        if (text != null && text.isNotBlank()) {
-                            textBuilder.append(text.trim()).append(" ")
-                        }
+                        if (text != null && text.isNotBlank()) textBuilder.append(text.trim()).append(" ")
                     }
                 }
                 XmlPullParser.END_TAG -> {
-                    if (parser.name.equals("body", ignoreCase = true)) {
-                        insideBody = false
-                    }
-                    // Делаем отступ после каждого абзаца
+                    if (parser.name.equals("body", ignoreCase = true)) insideBody = false
                     if (insideBody && (parser.name.equals("p", ignoreCase = true) || parser.name.equals("subtitle", ignoreCase = true))) {
                         textBuilder.append("\n\n")
                     }
@@ -137,7 +144,6 @@ class BookParser(private val context: Context) {
         return textBuilder.toString()
     }
 
-    // Ищем внутри ZIP и HTML (EPUB), и FB2 (на всякий случай)
     private fun parseZip(uri: Uri): String {
         val inputStream = context.contentResolver.openInputStream(uri) ?: throw Exception("Не удалось открыть архив")
         val textBuilder = StringBuilder()
@@ -147,6 +153,7 @@ class BookParser(private val context: Context) {
             var entry = zipInputStream.nextEntry
             val textFiles = mutableListOf<Pair<String, String>>()
 
+            // Собираем ВСЕ файлы, которые могут содержать текст
             while (entry != null) {
                 val name = entry.name.lowercase()
                 if (name.endsWith(".html") || name.endsWith(".xhtml") || name.endsWith(".htm") || name.endsWith(".fb2")) {
@@ -161,16 +168,24 @@ class BookParser(private val context: Context) {
                 entry = zipInputStream.nextEntry
             }
 
-            textFiles.sortBy { it.first }
-
-            for ((fileName, fileContent) in textFiles) {
-                if (fileName.endsWith(".fb2")) {
-                    fileContent.byteInputStream().use { 
+            // Сначала обрабатываем FB2 (если он есть внутри)
+            val fb2Files = textFiles.filter { it.first.lowercase().endsWith(".fb2") }
+            if (fb2Files.isNotEmpty()) {
+                for ((_, fb2Content) in fb2Files) {
+                    fb2Content.byteInputStream().use { 
                         textBuilder.append(parseFb2Stream(it)).append("\n\n")
                     }
-                } else {
-                    val cleanText = Html.fromHtml(fileContent, Html.FROM_HTML_MODE_LEGACY).toString()
-                    if (cleanText.isNotBlank()) textBuilder.append(cleanText.trim()).append("\n\n")
+                }
+                return@use // Если нашли FB2, на этом заканчиваем
+            }
+
+            // Если FB2 нет, значит это EPUB (обрабатываем HTML)
+            textFiles.sortBy { it.first }
+            for ((_, htmlContent) in textFiles) {
+                val cleanText = Html.fromHtml(htmlContent, Html.FROM_HTML_MODE_LEGACY).toString().trim()
+                // Берем только куски с нормальным текстом (защита от мусора)
+                if (cleanText.length > 100) {
+                    textBuilder.append(cleanText).append("\n\n")
                 }
             }
         }
