@@ -28,7 +28,9 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -86,12 +88,13 @@ fun MyBookDetailScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // === БОЛЬШАЯ ОБЛОЖКА ===
+        // === БОЛЬШАЯ ОБЛОЖКА С РАЗМЫТЫМ ФОНОМ ===
         Box(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(280.dp)
                 .clip(RoundedCornerShape(20.dp))
+                .background(MaterialTheme.colorScheme.surfaceVariant)
                 .border(
                     1.dp,
                     MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
@@ -100,17 +103,47 @@ fun MyBookDetailScreen(
             contentAlignment = Alignment.Center
         ) {
             if (book.coverUri.isNotBlank()) {
+                // 1. Размытый фон
+                AsyncImage(
+                    model = book.coverUri,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .blur(radius = 20.dp)
+                )
+                // 2. Затемнение
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.3f))
+                )
+                // 3. Четкая обложка
                 AsyncImage(
                     model = book.coverUri,
                     contentDescription = book.title,
-                    contentScale = ContentScale.Crop,
+                    contentScale = ContentScale.Fit,
                     modifier = Modifier.fillMaxSize()
                 )
             } else {
+                // Заглушка с размытым фоном
+                Image(
+                    painter = painterResource(id = R.drawable.book_cover_alchemist),
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .blur(radius = 20.dp)
+                )
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.3f))
+                )
                 Image(
                     painter = painterResource(id = R.drawable.book_cover_alchemist),
                     contentDescription = book.title,
-                    contentScale = ContentScale.Crop,
+                    contentScale = ContentScale.Fit,
                     modifier = Modifier.fillMaxSize()
                 )
             }
