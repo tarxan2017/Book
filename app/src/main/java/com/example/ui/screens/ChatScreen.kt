@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -63,7 +64,6 @@ fun ChatScreen(
     var inputText by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
 
-    // Автопрокрутка к последнему сообщению
     LaunchedEffect(messages.size) {
         if (messages.isNotEmpty()) {
             listState.animateScrollToItem(messages.size - 1)
@@ -74,6 +74,7 @@ fun ChatScreen(
         modifier = modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
+            .imePadding() // Теперь это сработает идеально!
             .testTag("chat_screen_content")
     ) {
         // === ШАПКА ===
@@ -94,16 +95,11 @@ fun ChatScreen(
                 )
             }
 
-            // Аватар друга
             Box(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(CircleShape)
-                    .border(
-                        1.dp,
-                        MaterialTheme.colorScheme.outline.copy(alpha = 0.5f),
-                        CircleShape
-                    )
+                    .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), CircleShape)
             ) {
                 if (friendPhotoUrl.isNotBlank()) {
                     AsyncImage(
@@ -135,7 +131,6 @@ fun ChatScreen(
             )
         }
 
-        // Тонкая линия-разделитель
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -207,7 +202,6 @@ fun ChatScreen(
 
             Spacer(modifier = Modifier.width(8.dp))
 
-            // Кнопка отправки
             Surface(
                 shape = CircleShape,
                 color = MaterialTheme.colorScheme.primary,

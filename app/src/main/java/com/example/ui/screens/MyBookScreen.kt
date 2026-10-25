@@ -15,13 +15,16 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.MenuBook
+import androidx.compose.material.icons.filled.RateReview
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -36,6 +39,7 @@ import coil.compose.AsyncImage
 import com.example.data.local.entity.BookEntity
 import com.example.ui.theme.PlayfairDisplayFontFamily
 import com.example.ui.viewmodel.MainViewModel
+import com.example.ui.viewmodel.Screen
 
 @Composable
 fun MyBookScreen(
@@ -129,17 +133,29 @@ fun MyBookScreen(
                     BookShelfItem(
                         book = book,
                         onClick = {
+                            // ИЗМЕНЕНО: Проверяем, есть ли текст
                             if (book.isUserWritten) {
-                                viewModel.openWriter(book)
+                                if (book.textContent.isBlank()) {
+                                    // Если пусто — сразу в редактор
+                                    viewModel.openWriter(book)
+                                } else {
+                                    // Если есть текст — в читалку
+                                    viewModel.setCurrentBook(book)
+                                    viewModel.navigateTo(Screen.Reader)
+                                }
                             } else {
                                 viewModel.openMyBookDetail(book)
                             }
                         },
                         onEditClick = {
-                            editingBook = book
-                            editTitle = book.title
-                            editAuthor = book.author
-                            editCoverUri = book.coverUri
+                            if (book.isUserWritten) {
+                                viewModel.openWriter(book)
+                            } else {
+                                editingBook = book
+                                editTitle = book.title
+                                editAuthor = book.author
+                                editCoverUri = book.coverUri
+                            }
                         }
                     )
                 }
@@ -188,7 +204,6 @@ fun MyBookScreen(
                         Spacer(modifier = Modifier.width(8.dp))
                         Button(
                             onClick = {
-                                // ЯВНО ПЕРЕДАЕМ coverUri
                                 viewModel.loadBookFromFile(
                                     context = context, 
                                     uri = pendingFileUri!!, 
@@ -287,6 +302,33 @@ private fun BookShelfItem(
             } else {
                 Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     Icon(Icons.Default.MenuBook, contentDescription = null, tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f), modifier = Modifier.size(40.dp))
+                }
+            }
+
+            // БЕЙДЖ В ЛЕВОМ ВЕРХНЕМ УГЛУ
+            Surface(
+                color = if (book.isUserWritten) MaterialTheme.colorScheme.primary else Color.Black.copy(alpha = 0.6f),
+                shape = RoundedCornerShape(topStart = 10.dp, bottomEnd = 8.dp),
+                modifier = Modifier.align(Alignment.TopStart)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = if (book.isUserWritten) Icons.Default.RateReview else Icons.Default.Download,
+                        contentDescription = null,
+                        tint = if (book.isUserWritten) MaterialTheme.colorScheme.onPrimary else Color.White,
+                        modifier = Modifier.size(10.dp)
+                    )
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text(
+                        text = if (book.isUserWritten) "Черновик" else "Книга",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (book.isUserWritten) MaterialTheme.colorScheme.onPrimary else Color.White,
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
 

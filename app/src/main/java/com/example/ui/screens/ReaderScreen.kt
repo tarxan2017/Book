@@ -30,6 +30,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.List
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FastForward
 import androidx.compose.material.icons.filled.FastRewind
 import androidx.compose.material.icons.filled.MenuBook
@@ -100,22 +101,14 @@ private val themeWhite = ReaderTheme("Белый", Color(0xFFFDFBF7), Color(0xFF
 private val themeSepia = ReaderTheme("Сепия", Color(0xFFF4ECD8), Color(0xFF5B4636), Color(0xFFEBDDBD), Color(0xFFC09A60))
 private val themeDark = ReaderTheme("Чёрный", Color(0xFF130F0C), Color(0xFFE8E1D9), Color(0xFF1E1712), Color(0xFFE5B064))
 
-// МОЩНАЯ ОЧИСТКА ТЕКСТА ДЛЯ TTS (без картинок, только текст)
 private fun cleanTextForTts(text: String): String {
     return text
-        // 1. Убираем ссылки (http, https, www)
         .replace(Regex("""(https?://|www\.)\S+"""), " ")
-        // 2. Убираем длинные линии и разделители (___, ===, ---)
         .replace(Regex("""[_*=\-—]{3,}"""), " ")
-        // 3. Убираем переносы слов в конце строки (кни-\nга -> книга)
         .replace(Regex("""-\r?\n"""), "")
-        // 4. Убираем не-буквы, не-цифры и не-пунктуацию
         .replace(Regex("""[^а-яА-ЯёЁa-zA-Z0-9\s.,!?;:\-—"«»()]"""), " ")
-        // 5. Убираем номера страниц (одинокие цифры на новой строке)
         .replace(Regex("""(?m)^\s*\d+\s*$"""), "")
-        // 6. Принудительно ставим пробел после знаков препинания, если его нет (для пауз)
         .replace(Regex("""([.,!?;:])(?=[а-яА-ЯёЁa-zA-Z0-9«(])"""), "$1 ")
-        // 7. Убираем лишние пробелы и переносы строк
         .replace(Regex("""\s+"""), " ")
         .trim()
 }
@@ -133,7 +126,6 @@ fun ReaderScreen(
     val isPaused by viewModel.isTtsPaused.collectAsStateWithLifecycle()
     val selectedVoice by viewModel.selectedVoice.collectAsStateWithLifecycle()
 
-    // ИСПРАВЛЕНО: Добавлены недостающие параметры для заглушки
     val book = currentBook ?: BookEntity(
         id = 1, title = "Книга не выбрана", author = "", coverRes = 0,
         totalChapters = 1, currentChapter = 1, progressPercent = 0,
@@ -153,12 +145,17 @@ fun ReaderScreen(
 
     var isAutoScrolling by remember { mutableStateOf(false) }
 
-    // ПЕРЕМЕННАЯ ДЛЯ ЭКРАНА ОБЛОЖКИ
     var showCover by remember { mutableStateOf(true) }
 
+    // ИСПРАВЛЕНИЕ: Если книга авторская, режем по разделителю "---", а не по символам
     val pages = remember(book.textContent, fontSize) {
-        if (book.textContent.isBlank()) listOf("Книга пуста")
-        else chunkText(book.textContent, chunkSize = (1200 * (17f / fontSize)).toInt())
+        if (book.textContent.isBlank()) {
+            listOf("Книга пуста")
+        } else if (book.isUserWritten) {
+            book.textContent.split("\n\n---\n\n").map { it.trim() }.filter { it.isNotBlank() }
+        } else {
+            chunkText(book.textContent, chunkSize = (1200 * (17f / fontSize)).toInt())
+        }
     }
     
     val currentPages by rememberUpdatedState(pages)
@@ -182,7 +179,6 @@ fun ReaderScreen(
         }
     }
 
-    // Сохранение прогресса
     LaunchedEffect(pagerState.currentPage) {
         val progress = ((pagerState.currentPage + 1).toFloat() / pages.size * 100).toInt()
         if (progress != book.progressPercent) {
@@ -190,7 +186,6 @@ fun ReaderScreen(
         }
     }
 
-    // Слушатель окончания аудио
     DisposableEffect(Unit) {
         viewModel.setOnTtsFinishedListener {
             if (playingPage < currentPages.size - 1) {
@@ -209,7 +204,6 @@ fun ReaderScreen(
         onDispose { viewModel.stopSpeaking() }
     }
 
-    // Предзагрузка следующей страницы
     LaunchedEffect(playingPage, isSpeaking, selectedVoice) {
         if (isSpeaking && playingPage < pages.size - 1) {
             viewModel.preloadNextTts(cleanTextForTts(pages[playingPage + 1]))
@@ -254,7 +248,6 @@ fun ReaderScreen(
             }
         }
 
-        // === ВЕРХНЯЯ ПАНЕЛЬ (ПЛЕЕР) ===
         AnimatedVisibility(
             visible = controlsVisible && !showCover,
             enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
@@ -272,11 +265,22 @@ fun ReaderScreen(
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        IconButton(onClick = { 
-                            viewModel.stopSpeaking()
-                            viewModel.navigateTo(Screen.MyBook) 
-                        }) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад", tint = currentTheme.text)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            IconButton(onClick = { 
+                                viewModel.stopSpeaking()
+                                viewModel.navigateTo(Screen.MyBook) 
+                            }) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад", tint = currentTheme.text)
+                            }
+                            
+                            if (book.isUserWritten) {
+                                IconButton(onClick = { 
+                                    viewModel.stopSpeaking()
+                                    viewModel.openWriter(book)
+                                }) {
+                                    Icon(Icons.Default.Edit, "Редактировать", tint = currentTheme.accent)
+                                }
+                            }
                         }
 
                         if (isSpeaking) {
@@ -347,7 +351,6 @@ fun ReaderScreen(
             }
         }
 
-        // === НИЖНЯЯ ПАНЕЛЬ ===
         AnimatedVisibility(
             visible = controlsVisible && !showCover,
             enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
@@ -384,7 +387,6 @@ fun ReaderScreen(
             }
         }
 
-        // === ЭКРАН ОБЛОЖКИ (ЗАКРЫТАЯ КНИГА) ===
         AnimatedVisibility(
             visible = showCover,
             enter = fadeIn(),
@@ -395,7 +397,6 @@ fun ReaderScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(currentTheme.bg)
-                    // При нажатии на экран обложка исчезает
                     .pointerInput(Unit) {
                         detectTapGestures(onTap = { showCover = false })
                     },
@@ -405,7 +406,6 @@ fun ReaderScreen(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.padding(32.dp)
                 ) {
-                    // Обложка книги
                     if (book.coverUri.isNotBlank()) {
                         AsyncImage(
                             model = book.coverUri,
@@ -417,7 +417,6 @@ fun ReaderScreen(
                                 .clip(RoundedCornerShape(16.dp))
                         )
                     } else {
-                        // Заглушка, если обложки нет
                         Box(
                             modifier = Modifier
                                 .fillMaxWidth(0.75f)
@@ -469,7 +468,6 @@ fun ReaderScreen(
         }
     }
 
-    // === ДИАЛОГ ВЫБОРА ГОЛОСА ===
     if (showVoiceDialog) {
         AlertDialog(
             onDismissRequest = { showVoiceDialog = false },
@@ -516,7 +514,6 @@ fun ReaderScreen(
         )
     }
 
-    // === ШТОРКА ПОИСКА ===
     if (showSearchSheet) {
         var query by remember { mutableStateOf("") }
         val searchResults = remember(query) {
@@ -589,7 +586,6 @@ fun ReaderScreen(
         }
     }
 
-    // === ШТОРКА ОГЛАВЛЕНИЯ ===
     if (showTocSheet) {
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(
@@ -631,7 +627,6 @@ fun ReaderScreen(
         }
     }
 
-    // === ШТОРКА НАСТРОЕК ===
     if (showSettingsSheet) {
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(

@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import android.content.Context
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -23,11 +25,15 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddPhotoAlternate
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Create
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FormatAlignCenter
 import androidx.compose.material.icons.filled.FormatBold
 import androidx.compose.material.icons.filled.FormatItalic
 import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.*
@@ -64,6 +70,8 @@ import com.example.ui.theme.PlayfairDisplayFontFamily
 import com.example.ui.viewmodel.MainViewModel
 import com.example.ui.viewmodel.Screen
 import kotlinx.coroutines.launch
+import java.io.BufferedReader
+import java.io.InputStreamReader
 import kotlin.math.absoluteValue
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -84,11 +92,29 @@ fun BookEditorScreen(
 
     var currentStep by remember { mutableIntStateOf(if (draftBook == null) 0 else 1) }
 
+    // Состояния для Экспорта
+    var showExportDialog by remember { mutableStateOf(false) }
+    var exportType by remember { mutableStateOf("") } // "TXT", "HTML", "BACKUP"
+
     val coverPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri -> if (uri != null) coverUri = uri.toString() }
 
+    // Лаунчер для сохранения файла
+    val createFileLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("*/*")
+    ) { uri ->
+        if (uri != null) {
+            val textToSave = if (exportType == "TXT" || exportType == "HTML") {
+                // Временно берем текст из состояния страниц (передается ниже)
+                "" 
+            } else ""
+            // Логика записи будет реализована внутри, так как нам нужен доступ к pages
+        }
+    }
+
     if (currentStep == 0) {
+        // ... (Мастер создания книги без изменений) ...
         Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             Icon(
                 imageVector = Icons.Default.Create,
@@ -199,6 +225,9 @@ fun BookEditorScreen(
             }
         }
     } else {
+        // ==========================================
+        // ЭКРАН 2: РЕДАКТОР
+        // ==========================================
         var controlsVisible by remember { mutableStateOf(true) }
         var showSettings by remember { mutableStateOf(false) }
         var showPreview by remember { mutableStateOf(false) }
@@ -231,6 +260,84 @@ fun BookEditorScreen(
             "sepia" -> Color(0xFFF4ECD8) to Color(0xFF5B4636)
             else -> MaterialTheme.colorScheme.background to MaterialTheme.colorScheme.onBackground
         }
+
+        // --- ЛОГИКА ЭКСПОРТА И ИМПОРТА ---
+        val createFileLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.CreateDocument("*/*")
+        ) { uri ->
+            if (uri != null) {
+                val content = when (exportType) {
+                    "TXT" -> pages.joinToString("\n\n---\n\n") { it.text }
+                    "HTML" -> {
+                        val htmlBody = pages.joinToString("") { page ->
+                            page.text.split("\n").joinToString("<br>") { line ->
+                                val centered = line.contains("<center>") && line.contains("</center>")
+                                val cleanLine = line.replace("<center>", "").replace("</center>", "")
+                                    .replace(Regex("""\*\*(.*?)\*\*"""), "<b>$1</b>")
+                                    .replace(Regex("""\*(.*?)\*"""), "<i>$1</i>")
+                                if (centered) "<div style=\"text-align:center;\">$cleanLine</div>" else cleanLine
+                            } + "<hr>"
+                        }
+                        """
+                        <html>
+                        <head><meta charset="utf-8"><title>$bookTitle</title></head>
+                        <body style="font-family: Georgia, serif; font-size: 18px; padding: 20px; color: #333;">
+                        <h1 style="text-align:center;">$bookTitle</h1>
+                        <h3 style="text-align:center; color: #666;">$bookAuthor</h3>
+                        $htmlBody
+                        </body>
+                        </html>
+                        """.trimIndent()
+                    }
+                    "BACKUP" -> {
+                        "===LIVING_PAGE_BACKUP===\n$bookTitle\n$bookAuthor\n${pages.joinToString("\n\n---\n\n") { it.text }}"
+                    }
+                    else -> ""
+                }
+                try {
+                    context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                        outputStream.write(content.toByteArray())
+                    }
+                    viewModel.navigateTo(Screen.MyBook) // Или просто показать Toast об успехе
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+
+        val openFileLauncher = rememberLauncherForActivityResult(
+            contract = ActivityResultContracts.OpenDocument()
+        ) { uri ->
+            if (uri != null) {
+                try {
+                    context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                        val reader = BufferedReader(InputStreamReader(inputStream))
+                        val fullText = reader.readText()
+                        
+                        if (fullText.startsWith("===LIVING_PAGE_BACKUP===\n")) {
+                            val parts = fullText.removePrefix("===LIVING_PAGE_BACKUP===\n").split("\n", limit = 3)
+                            if (parts.size >= 3) {
+                                bookTitle = parts[0].trim()
+                                bookAuthor = parts[1].trim()
+                                val pagesText = parts[2]
+                                val newPages = pagesText.split("\n\n---\n\n")
+                                pages.clear()
+                                newPages.forEach { pages.add(TextFieldValue(it)) }
+                                showExportDialog = false
+                            }
+                        } else {
+                            // Если это просто TXT файл
+                            pages.clear()
+                            fullText.split("\n\n---\n\n").forEach { pages.add(TextFieldValue(it)) }
+                            showExportDialog = false
+                        }
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+        }
+        // ---------------------------------
 
         fun applyFormatting(format: String) {
             val currentVal = pages[pagerState.currentPage]
@@ -307,6 +414,7 @@ fun BookEditorScreen(
                 }
             }
 
+            // ВЕРХНЯЯ ПАНЕЛЬ
             AnimatedVisibility(
                 visible = controlsVisible,
                 enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
@@ -347,13 +455,19 @@ fun BookEditorScreen(
                                     onClick = { showMenu = false },
                                     enabled = false
                                 )
+                                DropdownMenuItem(
+                                    text = { Text("Экспорт и Бэкап") }, // НОВЫЙ ПУНКТ
+                                    onClick = { 
+                                        showMenu = false
+                                        showExportDialog = true 
+                                    }
+                                )
                                 HorizontalDivider()
                                 DropdownMenuItem(
                                     text = { Text("Сохранить и выйти") },
                                     onClick = {
                                         showMenu = false
                                         val finalText = pages.joinToString("\n\n---\n\n") { it.text }
-                                        // ИСПРАВЛЕНО: Передаем draftBook, чтобы избежать дубликатов
                                         viewModel.saveDraft(context, draftBook, bookTitle, bookAuthor, finalText, coverUri)
                                     }
                                 )
@@ -363,11 +477,14 @@ fun BookEditorScreen(
                 }
             }
 
+            // НИЖНЯЯ ПАНЕЛЬ (формулировка)
             AnimatedVisibility(
                 visible = controlsVisible,
                 enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
                 exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
-                modifier = Modifier.align(Alignment.BottomCenter)
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .imePadding()
             ) {
                 Surface(
                     color = MaterialTheme.colorScheme.surface.copy(alpha = 0.95f),
@@ -389,7 +506,6 @@ fun BookEditorScreen(
                             IconButton(onClick = { applyFormatting("center") }) {
                                 Icon(Icons.Default.FormatAlignCenter, "По центру", tint = MaterialTheme.colorScheme.onSurface)
                             }
-                            // НОВАЯ КНОПКА ПРЕДПРОСМОТРА
                             IconButton(onClick = { 
                                 focusManager.clearFocus()
                                 showPreview = true 
@@ -423,6 +539,7 @@ fun BookEditorScreen(
                 }
             }
 
+            // ДИАЛОГ НАСТРОЕК
             if (showSettings) {
                 AlertDialog(
                     onDismissRequest = { showSettings = false },
@@ -442,6 +559,77 @@ fun BookEditorScreen(
                     },
                     confirmButton = {
                         TextButton(onClick = { showSettings = false }) { Text("Готово") }
+                    }
+                )
+            }
+
+            // ДИАЛОГ ЭКСПОРТА
+            if (showExportDialog) {
+                AlertDialog(
+                    onDismissRequest = { showExportDialog = false },
+                    title = { Text("Экспорт и восстановление", fontFamily = PlayfairDisplayFontFamily, fontWeight = FontWeight.Bold) },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            // ЛОКАЛЬНОЕ СОХРАНЕНИЕ
+                            Text("Сохранить на устройство", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            
+                            ListItem(
+                                headlineContent = { Text("Скачать в TXT") },
+                                leadingContent = { Icon(Icons.Default.FileDownload, contentDescription = null) },
+                                modifier = Modifier.clickable { 
+                                    exportType = "TXT"
+                                    showExportDialog = false 
+                                    createFileLauncher.launch("${bookTitle.ifBlank { "book" }}.txt")
+                                }
+                            )
+                            ListItem(
+                                headlineContent = { Text("Скачать в HTML") },
+                                leadingContent = { Icon(Icons.Default.Download, contentDescription = null) },
+                                modifier = Modifier.clickable { 
+                                    exportType = "HTML"
+                                    showExportDialog = false 
+                                    createFileLauncher.launch("${bookTitle.ifBlank { "book" }}.html")
+                                }
+                            )
+                            ListItem(
+                                headlineContent = { Text("Создать бэкап (для восстановления)") },
+                                leadingContent = { Icon(Icons.Default.Create, contentDescription = null) },
+                                modifier = Modifier.clickable { 
+                                    exportType = "BACKUP"
+                                    showExportDialog = false 
+                                    createFileLauncher.launch("${bookTitle.ifBlank { "book" }}_backup.lp")
+                                }
+                            )
+
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                            // ЛОКАЛЬНОЕ ВОССТАНОВЛЕНИЕ
+                            Text("Восстановить", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                            ListItem(
+                                headlineContent = { Text("Загрузить из файла") },
+                                leadingContent = { Icon(Icons.Default.Restore, contentDescription = null) },
+                                modifier = Modifier.clickable { 
+                                    showExportDialog = false 
+                                    openFileLauncher.launch(arrayOf("text/plain", "application/octet-stream", "*/*"))
+                                }
+                            )
+
+                            HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
+
+                            // ОБЛАКО (БУДУЩЕЕ)
+                            Text("Облако (Скоро)", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            ListItem(
+                                headlineContent = { Text("Загрузить в Google Drive") },
+                                leadingContent = { Icon(Icons.Default.CloudUpload, contentDescription = null) },
+                                colors = ListItemDefaults.colors(
+                                    headlineColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+                                    leadingIconColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
+                                )
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        TextButton(onClick = { showExportDialog = false }) { Text("Закрыть") }
                     }
                 )
             }
@@ -473,7 +661,6 @@ fun BookEditorScreen(
                                     .fillMaxSize()
                                     .verticalScroll(rememberScrollState())
                             ) {
-                                // Парсим и отображаем текст
                                 val rawText = pages[pagerState.currentPage].text
                                 val lines = rawText.split("\n")
                                 
