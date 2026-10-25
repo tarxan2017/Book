@@ -58,6 +58,8 @@ sealed class Screen {
     object AdminStats : Screen()
     data class AdminBookEdit(val book: PublicBook) : Screen()
     object NotificationSettings : Screen()
+
+    data class BookEditor(val draftBook: BookEntity? = null) : Screen()
 }
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -77,6 +79,7 @@ class MainViewModel(
     val allQuotes: StateFlow<List<QuoteEntity>> = repository.allQuotes
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    // ИСПРАВЛЕНО: тип возвращен на QuoteEntity?
     val todayQuote: StateFlow<QuoteEntity?> = repository.todayQuote
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
@@ -159,7 +162,6 @@ class MainViewModel(
     val ttsSpeed: StateFlow<Float> = repository.ttsSpeed
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 1.0f)
 
-    // === СОСТОЯНИЯ ДЛЯ КОММЕНТАРИЕВ ===
     private val _comments = MutableStateFlow<List<Comment>>(emptyList())
     val comments: StateFlow<List<Comment>> = _comments.asStateFlow()
 
@@ -205,16 +207,12 @@ class MainViewModel(
         }
     }
 
-    // === ФУНКЦИИ ДЛЯ КОММЕНТАРИЕВ ===
     fun fetchComments(bookId: String) {
         viewModelScope.launch {
             _isCommentsLoading.value = true
             val result = repository.getComments(bookId)
-            result.onSuccess { list ->
-                _comments.value = list
-            }.onFailure { error ->
-                _userMessage.value = "Ошибка загрузки комментариев: ${error.localizedMessage}"
-            }
+            result.onSuccess { list -> _comments.value = list }
+                .onFailure { error -> _userMessage.value = "Ошибка загрузки комментариев: ${error.localizedMessage}" }
             _isCommentsLoading.value = false
         }
     }
@@ -227,49 +225,36 @@ class MainViewModel(
             result.onSuccess {
                 onSuccess()
                 fetchComments(bookId)
-            }.onFailure { error ->
-                _userMessage.value = "Ошибка отправки: ${error.localizedMessage}"
-            }
+            }.onFailure { error -> _userMessage.value = "Ошибка отправки: ${error.localizedMessage}" }
             _isCommentSending.value = false
         }
     }
 
+    // ИСПРАВЛЕНО: commentId теперь Int (совпадает с Repository)
     fun deleteComment(commentId: Int, bookId: String) {
         viewModelScope.launch {
             val result = repository.deleteComment(commentId)
             result.onSuccess {
                 _userMessage.value = "Комментарий удален"
                 fetchComments(bookId)
-            }.onFailure { error ->
-                _userMessage.value = "Ошибка удаления: ${error.localizedMessage}"
-            }
+            }.onFailure { error -> _userMessage.value = "Ошибка удаления: ${error.localizedMessage}" }
         }
     }
 
-    fun setTtsVoice(voice: String) {
-        _selectedVoice.value = voice
-    }
+    fun setTtsVoice(voice: String) { _selectedVoice.value = voice }
 
     fun speakText(text: String, forceVoice: String? = null) {
-        repository.ttsManager.speak(
-            text = text, 
-            voice = forceVoice ?: _selectedVoice.value, 
-            speed = ttsSpeed.value
-        )
+        repository.ttsManager.speak(text = text, voice = forceVoice ?: _selectedVoice.value, speed = ttsSpeed.value)
     }
 
-    fun preloadNextTts(text: String) {
-        repository.ttsManager.preloadNext(text, _selectedVoice.value, ttsSpeed.value)
-    }
-
+    fun preloadNextTts(text: String) { repository.ttsManager.preloadNext(text, _selectedVoice.value, ttsSpeed.value) }
     fun pauseSpeaking() { repository.ttsManager.pause() }
     fun resumeSpeaking() { repository.ttsManager.resume() }
     fun seekSpeaking(deltaMs: Int) { repository.ttsManager.seek(deltaMs) }
     fun setOnTtsFinishedListener(listener: () -> Unit) { repository.ttsManager.onAudioFinishedListener = listener }
     fun stopSpeaking() { repository.stopSpeech() }
 
-    fun getCoverUrl(coverFileId: String): String? =
-        if (coverFileId.isBlank()) null else _coverUrls.value[coverFileId]
+    fun getCoverUrl(coverFileId: String): String? = if (coverFileId.isBlank()) null else _coverUrls.value[coverFileId]
 
     fun openPublicBook(book: PublicBook) {
         _selectedPublicBook.value = book
@@ -277,22 +262,17 @@ class MainViewModel(
         fetchComments(book.id)
     }
 
-    fun openPublicLibrary() {
-        _currentScreen.value = Screen.PublicLibrary
-    }
+    fun openPublicLibrary() { _currentScreen.value = Screen.PublicLibrary }
 
     fun downloadPublicBook(context: Context, book: PublicBook) {
         viewModelScope.launch {
             _isDownloading.value = true
             val result = repository.downloadPublicBook(context, book)
             _isDownloading.value = false
-
             result.onSuccess {
                 _userMessage.value = "Открываем книгу..."
                 _currentScreen.value = Screen.Reader
-            }.onFailure { error ->
-                _userMessage.value = "Ошибка: ${error.localizedMessage}"
-            }
+            }.onFailure { error -> _userMessage.value = "Ошибка: ${error.localizedMessage}" }
         }
     }
 
@@ -361,11 +341,8 @@ class MainViewModel(
     fun signInWithGoogle(context: Context) {
         viewModelScope.launch {
             val result = repository.signInWithGoogle(context)
-            result.onSuccess { user ->
-                _userMessage.value = "Вход выполнен: ${user.displayName ?: user.email}"
-            }.onFailure { error ->
-                _userMessage.value = "Ошибка входа: ${error.localizedMessage}"
-            }
+            result.onSuccess { user -> _userMessage.value = "Вход выполнен: ${user.displayName ?: user.email}" }
+                .onFailure { error -> _userMessage.value = "Ошибка входа: ${error.localizedMessage}" }
         }
     }
 
@@ -463,6 +440,10 @@ class MainViewModel(
         _currentScreen.value = Screen.AdminBookEdit(book)
     }
 
+    fun openWriter(book: BookEntity? = null) {
+        _currentScreen.value = Screen.BookEditor(book)
+    }
+
     fun deletePublicBook(bookId: String) {
         if (bookId.isBlank()) return
         if (!canManageBooks.value) { _userMessage.value = "Недостаточно прав для удаления"; return }
@@ -514,7 +495,6 @@ class MainViewModel(
         }
     }
 
-    // ОБНОВЛЕНО: Используем BookParser вместо PdfParser и поддерживаем EPUB/FB2
     fun loadBookFromFile(context: Context, uri: Uri, title: String = "", author: String = "", coverUri: String = "") {
         viewModelScope.launch {
             _isAiThinking.value = true
@@ -537,12 +517,47 @@ class MainViewModel(
                 val newBook = BookEntity(
                     title = title.ifBlank { "Загруженная книга" }, author = author.ifBlank { "Неизвестный автор" },
                     coverRes = R.drawable.book_cover_alchemist, totalChapters = 1, currentChapter = 1,
-                    progressPercent = 0, generatedQuotesCount = 0, textContent = text, isCurrent = true, coverUri = finalCoverUri
+                    progressPercent = 0, generatedQuotesCount = 0, textContent = text, isCurrent = true, coverUri = finalCoverUri,
+                    isUserWritten = false
                 )
                 repository.addBook(newBook)
                 _userMessage.value = "Книга успешно загружена!"
             }.onFailure { error -> _userMessage.value = "Ошибка чтения: ${error.localizedMessage}" }
             _isAiThinking.value = false
+        }
+    }
+
+    fun saveDraft(context: Context, title: String, author: String, textContent: String, coverUri: String) {
+        viewModelScope.launch {
+            var finalCoverUri = coverUri
+            if (coverUri.isNotBlank() && coverUri.startsWith("content://")) {
+                try {
+                    val inputStream = context.contentResolver.openInputStream(Uri.parse(coverUri))
+                    val file = File(context.filesDir, "cover_draft_${System.currentTimeMillis()}.jpg")
+                    val outputStream = FileOutputStream(file)
+                    inputStream?.copyTo(outputStream)
+                    inputStream?.close()
+                    outputStream.close()
+                    finalCoverUri = file.absolutePath
+                } catch (e: Exception) { e.printStackTrace() }
+            }
+
+            val newBook = BookEntity(
+                title = title.ifBlank { "Без названия" },
+                author = author.ifBlank { "Неизвестный автор" },
+                coverRes = R.drawable.book_cover_alchemist,
+                totalChapters = 1,
+                currentChapter = 1,
+                progressPercent = 0,
+                generatedQuotesCount = 0,
+                textContent = textContent,
+                isCurrent = false,
+                coverUri = finalCoverUri,
+                isUserWritten = true
+            )
+            repository.addBook(newBook)
+            _userMessage.value = "Черновик сохранен!"
+            _currentScreen.value = Screen.MyBook
         }
     }
 

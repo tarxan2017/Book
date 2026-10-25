@@ -103,7 +103,7 @@ class LivingPageRepository(
 
     suspend fun setCurrentBook(book: BookEntity) {
         dao.clearCurrentBook()
-        dao.setCurrentBookById(book.id)
+        dao.setCurrentBookById(book.id.toLong())
     }
 
     suspend fun deleteBook(book: BookEntity) {
@@ -111,6 +111,7 @@ class LivingPageRepository(
     }
 
     val allQuotes: Flow<List<QuoteEntity>> = dao.getAllQuotes()
+    // ВОЗВРАЩАЕМ ПРАВИЛЬНЫЙ ТИП (одна цитата, а не список)
     val todayQuote: Flow<QuoteEntity?> = dao.getTodayQuote()
 
     suspend fun addQuote(quote: QuoteEntity) {
@@ -155,6 +156,7 @@ class LivingPageRepository(
                     author = surprise.author,
                     bookTitle = surprise.bookTitle,
                     formatType = surprise.formatType,
+                    // Убрали toLong(), так как CloudSurprise ждет Int
                     durationSeconds = surprise.durationSeconds
                 )
             )
@@ -186,7 +188,6 @@ class LivingPageRepository(
     }
 
     suspend fun downloadPublicBook(context: Context, book: PublicBook): Result<Uri> {
-        // === ПРОВЕРКА НА ДУБЛИКАТ ===
         val existingBooks = dao.getAllBooks().first()
         val existingBook = existingBooks.find { 
             it.title.trim().equals(book.title.trim(), ignoreCase = true) && 
@@ -195,11 +196,10 @@ class LivingPageRepository(
 
         if (existingBook != null) {
             dao.clearCurrentBook()
-            dao.setCurrentBookById(existingBook.id)
+            dao.setCurrentBookById(existingBook.id.toLong())
             return Result.success(Uri.parse(existingBook.coverUri ?: ""))
         }
 
-        // === ЕСЛИ КНИГИ НЕТ, СКАЧИВАЕМ ===
         if (book.pdfFileId.isBlank()) {
             return Result.failure(Exception("У этой книги нет файла"))
         }
@@ -222,7 +222,6 @@ class LivingPageRepository(
         val textResult = bookParser.extractTextFromBook(pdfUri)
         val textContent = textResult.getOrNull() ?: ""
 
-        // ЗАЩИТА: Если текст не извлекся, прерываем скачивание
         if (textContent.isBlank()) {
             return Result.failure(Exception("Не удалось извлечь текст. Возможно, файл поврежден или это сканы без текстового слоя."))
         }
@@ -239,7 +238,8 @@ class LivingPageRepository(
             generatedQuotesCount = 0,
             textContent = textContent,
             isCurrent = true,
-            coverUri = coverUri?.toString() ?: ""
+            coverUri = coverUri?.toString() ?: "",
+            isUserWritten = false
         )
 
         dao.insertBook(localBook)
@@ -301,10 +301,6 @@ class LivingPageRepository(
     fun stopSpeech() = ttsManager.stop()
     fun openTtsSettings() = ttsManager.openTtsSettings()
 
-    // ==========================================
-    // ФУНКЦИИ ДЛЯ РАБОТЫ С КОММЕНТАРИЯМИ
-    // ==========================================
-
     suspend fun getComments(bookId: String): Result<List<Comment>> = withContext(Dispatchers.IO) {
         try {
             val request = Request.Builder()
@@ -365,6 +361,7 @@ class LivingPageRepository(
         }
     }
 
+    // Вернули Int, так как API и БД ждут Int
     suspend fun deleteComment(commentId: Int): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             val user = currentUser.value

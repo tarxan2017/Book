@@ -42,11 +42,12 @@ import com.example.ui.screens.AdminModeratorsScreen
 import com.example.ui.screens.AdminPanelScreen
 import com.example.ui.screens.AdminStatsScreen
 import com.example.ui.screens.BookListScreen
+import com.example.ui.screens.BookEditorScreen // <-- ДОБАВЛЕН ИМПОРТ
 import com.example.ui.screens.ChatScreen
 import com.example.ui.screens.FriendsScreen
 import com.example.ui.screens.GiftAnimationScreen
 import com.example.ui.screens.HomeScreen
-import com.example.ui.screens.MyBookDetailScreen // <-- НОВЫЙ ИМПОРТ
+import com.example.ui.screens.MyBookDetailScreen
 import com.example.ui.screens.MyBookScreen
 import com.example.ui.screens.NotificationSettingsScreen
 import com.example.ui.screens.OpenBookAnimationScreen
@@ -132,7 +133,7 @@ class MainActivity : ComponentActivity() {
                         is Screen.Chat -> mainViewModel.navigateTo(Screen.Friends)
                         is Screen.PublicLibrary -> mainViewModel.navigateTo(Screen.Home)
                         is Screen.PublicBookDetail -> mainViewModel.navigateTo(Screen.PublicLibrary)
-                        is Screen.MyBookDetail -> mainViewModel.navigateTo(Screen.MyBook) // <-- НОВАЯ ЛОГИКА НАЗАД
+                        is Screen.MyBookDetail -> mainViewModel.navigateTo(Screen.MyBook)
                         is Screen.VideoPlayer -> mainViewModel.navigateTo(Screen.Home)
                         is Screen.SendSurprise -> mainViewModel.navigateTo(Screen.Friends)
                         is Screen.ReceiveSurprise -> mainViewModel.navigateTo(Screen.Friends)
@@ -143,6 +144,7 @@ class MainActivity : ComponentActivity() {
                         is Screen.AdminStats -> mainViewModel.navigateTo(Screen.AdminPanel)
                         is Screen.AdminBookEdit -> mainViewModel.navigateTo(Screen.AdminLibrary)
                         is Screen.NotificationSettings -> mainViewModel.navigateTo(Screen.Settings)
+                        is Screen.BookEditor -> mainViewModel.navigateTo(Screen.MyBook) // <-- ДОБАВЛЕНА ОБРАБОТКА НАЗАД
                         else -> mainViewModel.navigateTo(Screen.Home)
                     }
                 }
@@ -210,7 +212,6 @@ class MainActivity : ComponentActivity() {
                                 viewModel = mainViewModel,
                                 book = screen.book
                             )
-                            // НОВЫЙ ЭКРАН: ДЕТАЛИ МОЕЙ КНИГИ
                             is Screen.MyBookDetail -> MyBookDetailScreen(
                                 viewModel = mainViewModel,
                                 book = screen.book
@@ -236,6 +237,12 @@ class MainActivity : ComponentActivity() {
                             )
                             
                             is Screen.NotificationSettings -> NotificationSettingsScreen(viewModel = mainViewModel)
+                            
+                            // ДОБАВЛЕН ВЫЗОВ НОВОГО ЭКРАНА РЕДАКТОРА
+                            is Screen.BookEditor -> BookEditorScreen(
+                                viewModel = mainViewModel,
+                                draftBook = screen.draftBook
+                            )
                         }
                     }
                 }

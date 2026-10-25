@@ -133,10 +133,12 @@ fun ReaderScreen(
     val isPaused by viewModel.isTtsPaused.collectAsStateWithLifecycle()
     val selectedVoice by viewModel.selectedVoice.collectAsStateWithLifecycle()
 
+    // ИСПРАВЛЕНО: Добавлены недостающие параметры для заглушки
     val book = currentBook ?: BookEntity(
         id = 1, title = "Книга не выбрана", author = "", coverRes = 0,
         totalChapters = 1, currentChapter = 1, progressPercent = 0,
-        textContent = "Текст книги не загружен."
+        generatedQuotesCount = 0, textContent = "Текст книги не загружен.",
+        isCurrent = false, coverUri = "", isUserWritten = false
     )
 
     var currentTheme by remember { mutableStateOf(themeDark) }
