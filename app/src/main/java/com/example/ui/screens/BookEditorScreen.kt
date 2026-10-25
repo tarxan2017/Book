@@ -22,12 +22,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Create
 import androidx.compose.material.icons.filled.FormatAlignCenter
 import androidx.compose.material.icons.filled.FormatBold
 import androidx.compose.material.icons.filled.FormatItalic
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -42,13 +44,19 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.TextFieldValue
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import coil.compose.AsyncImage
 import com.example.data.local.entity.BookEntity
 import com.example.data.remote.model.BookCategories
@@ -193,6 +201,7 @@ fun BookEditorScreen(
     } else {
         var controlsVisible by remember { mutableStateOf(true) }
         var showSettings by remember { mutableStateOf(false) }
+        var showPreview by remember { mutableStateOf(false) }
         var editorTheme by remember { mutableStateOf("dark") }
         var fontSize by remember { mutableFloatStateOf(20f) }
         var showMenu by remember { mutableStateOf(false) }
@@ -335,9 +344,7 @@ fun BookEditorScreen(
                             ) {
                                 DropdownMenuItem(
                                     text = { Text(if (isPublished) "Обновить книгу" else "Опубликовать (Скоро)") },
-                                    onClick = {
-                                        showMenu = false
-                                    },
+                                    onClick = { showMenu = false },
                                     enabled = false
                                 )
                                 HorizontalDivider()
@@ -346,8 +353,8 @@ fun BookEditorScreen(
                                     onClick = {
                                         showMenu = false
                                         val finalText = pages.joinToString("\n\n---\n\n") { it.text }
-                                        // ВОТ ЭТА СТРОКА (РАНЬШЕ ВЫЗЫВАЛА ОШИБКУ)
-                                        viewModel.saveDraft(context, bookTitle, bookAuthor, finalText, coverUri)
+                                        // ИСПРАВЛЕНО: Передаем draftBook, чтобы избежать дубликатов
+                                        viewModel.saveDraft(context, draftBook, bookTitle, bookAuthor, finalText, coverUri)
                                     }
                                 )
                             }
@@ -381,6 +388,13 @@ fun BookEditorScreen(
                             }
                             IconButton(onClick = { applyFormatting("center") }) {
                                 Icon(Icons.Default.FormatAlignCenter, "По центру", tint = MaterialTheme.colorScheme.onSurface)
+                            }
+                            // НОВАЯ КНОПКА ПРЕДПРОСМОТРА
+                            IconButton(onClick = { 
+                                focusManager.clearFocus()
+                                showPreview = true 
+                            }) {
+                                Icon(Icons.Default.Visibility, "Предпросмотр", tint = MaterialTheme.colorScheme.primary)
                             }
                         }
                         
@@ -430,6 +444,81 @@ fun BookEditorScreen(
                         TextButton(onClick = { showSettings = false }) { Text("Готово") }
                     }
                 )
+            }
+
+            // ДИАЛОГ ПРЕДПРОСМОТРА
+            if (showPreview) {
+                Dialog(onDismissRequest = { showPreview = false }) {
+                    Surface(
+                        shape = RoundedCornerShape(24.dp),
+                        color = bgColor,
+                        modifier = Modifier.fillMaxWidth().fillMaxHeight(0.8f).padding(8.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(20.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Предпросмотр", style = MaterialTheme.typography.titleLarge, color = textColor, fontWeight = FontWeight.Bold)
+                                IconButton(onClick = { showPreview = false }) {
+                                    Icon(Icons.Default.Close, "Закрыть", tint = textColor)
+                                }
+                            }
+                            
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .verticalScroll(rememberScrollState())
+                            ) {
+                                // Парсим и отображаем текст
+                                val rawText = pages[pagerState.currentPage].text
+                                val lines = rawText.split("\n")
+                                
+                                lines.forEach { line ->
+                                    val isCentered = line.contains("<center>") && line.contains("</center>")
+                                    val cleanLine = line.replace("<center>", "").replace("</center>", "").trim()
+                                    
+                                    if (cleanLine.isNotBlank()) {
+                                        val annotatedString = buildAnnotatedString {
+                                            var currentIndex = 0
+                                            val regex = Regex("""\*\*(.*?)\*\*|\*(.*?)\*""")
+                                            
+                                            regex.findAll(cleanLine).forEach { match ->
+                                                append(cleanLine.substring(currentIndex, match.range.first))
+                                                if (match.groupValues[1].isNotEmpty()) {
+                                                    withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+                                                        append(match.groupValues[1])
+                                                    }
+                                                } else if (match.groupValues[2].isNotEmpty()) {
+                                                    withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
+                                                        append(match.groupValues[2])
+                                                    }
+                                                }
+                                                currentIndex = match.range.last + 1
+                                            }
+                                            append(cleanLine.substring(currentIndex))
+                                        }
+                                        
+                                        Text(
+                                            text = annotatedString,
+                                            color = textColor,
+                                            fontSize = fontSize.sp,
+                                            fontFamily = FontFamily.Serif,
+                                            lineHeight = (fontSize * 1.5).sp,
+                                            textAlign = if (isCentered) TextAlign.Center else TextAlign.Start,
+                                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                                        )
+                                    } else {
+                                        Spacer(modifier = Modifier.height(12.dp))
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
     }

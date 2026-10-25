@@ -79,7 +79,6 @@ class MainViewModel(
     val allQuotes: StateFlow<List<QuoteEntity>> = repository.allQuotes
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    // ИСПРАВЛЕНО: тип возвращен на QuoteEntity?
     val todayQuote: StateFlow<QuoteEntity?> = repository.todayQuote
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
@@ -230,7 +229,6 @@ class MainViewModel(
         }
     }
 
-    // ИСПРАВЛЕНО: commentId теперь Int (совпадает с Repository)
     fun deleteComment(commentId: Int, bookId: String) {
         viewModelScope.launch {
             val result = repository.deleteComment(commentId)
@@ -527,7 +525,8 @@ class MainViewModel(
         }
     }
 
-    fun saveDraft(context: Context, title: String, author: String, textContent: String, coverUri: String) {
+    // ИСПРАВЛЕНО: Добавлен параметр existingBook для проверки на дубликат
+    fun saveDraft(context: Context, existingBook: BookEntity?, title: String, author: String, textContent: String, coverUri: String) {
         viewModelScope.launch {
             var finalCoverUri = coverUri
             if (coverUri.isNotBlank() && coverUri.startsWith("content://")) {
@@ -542,21 +541,34 @@ class MainViewModel(
                 } catch (e: Exception) { e.printStackTrace() }
             }
 
-            val newBook = BookEntity(
-                title = title.ifBlank { "Без названия" },
-                author = author.ifBlank { "Неизвестный автор" },
-                coverRes = R.drawable.book_cover_alchemist,
-                totalChapters = 1,
-                currentChapter = 1,
-                progressPercent = 0,
-                generatedQuotesCount = 0,
-                textContent = textContent,
-                isCurrent = false,
-                coverUri = finalCoverUri,
-                isUserWritten = true
-            )
-            repository.addBook(newBook)
-            _userMessage.value = "Черновик сохранен!"
+            if (existingBook != null) {
+                // ОБНОВЛЯЕМ СУЩЕСТВУЮЩУЮ КНИГУ
+                val updatedBook = existingBook.copy(
+                    title = title.ifBlank { "Без названия" },
+                    author = author.ifBlank { "Неизвестный автор" },
+                    textContent = textContent,
+                    coverUri = finalCoverUri
+                )
+                repository.updateBook(updatedBook)
+                _userMessage.value = "Черновик обновлен!"
+            } else {
+                // СОЗДАЕМ НОВУЮ КНИГУ
+                val newBook = BookEntity(
+                    title = title.ifBlank { "Без названия" },
+                    author = author.ifBlank { "Неизвестный автор" },
+                    coverRes = R.drawable.book_cover_alchemist,
+                    totalChapters = 1,
+                    currentChapter = 1,
+                    progressPercent = 0,
+                    generatedQuotesCount = 0,
+                    textContent = textContent,
+                    isCurrent = false,
+                    coverUri = finalCoverUri,
+                    isUserWritten = true
+                )
+                repository.addBook(newBook)
+                _userMessage.value = "Черновик сохранен!"
+            }
             _currentScreen.value = Screen.MyBook
         }
     }
