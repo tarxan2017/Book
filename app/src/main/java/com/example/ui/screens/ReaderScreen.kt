@@ -147,15 +147,9 @@ fun ReaderScreen(
 
     var showCover by remember { mutableStateOf(true) }
 
-    // ИСПРАВЛЕНИЕ: Если книга авторская, режем по разделителю "---", а не по символам
     val pages = remember(book.textContent, fontSize) {
-        if (book.textContent.isBlank()) {
-            listOf("Книга пуста")
-        } else if (book.isUserWritten) {
-            book.textContent.split("\n\n---\n\n").map { it.trim() }.filter { it.isNotBlank() }
-        } else {
-            chunkText(book.textContent, chunkSize = (1200 * (17f / fontSize)).toInt())
-        }
+        if (book.textContent.isBlank()) listOf("Книга пуста")
+        else chunkText(book.textContent, chunkSize = (1200 * (17f / fontSize)).toInt())
     }
     
     val currentPages by rememberUpdatedState(pages)
@@ -179,10 +173,13 @@ fun ReaderScreen(
         }
     }
 
+    // ИСПРАВЛЕНО: Сохраняем прогресс только если это реальная книга, а не заглушка
     LaunchedEffect(pagerState.currentPage) {
-        val progress = ((pagerState.currentPage + 1).toFloat() / pages.size * 100).toInt()
-        if (progress != book.progressPercent) {
-            viewModel.saveReadingProgress(book, progress)
+        if (currentBook != null) {
+            val progress = ((pagerState.currentPage + 1).toFloat() / pages.size * 100).toInt()
+            if (progress != book.progressPercent) {
+                viewModel.saveReadingProgress(book, progress)
+            }
         }
     }
 
@@ -248,6 +245,7 @@ fun ReaderScreen(
             }
         }
 
+        // === ВЕРХНЯЯ ПАНЕЛЬ (ПЛЕЕР) ===
         AnimatedVisibility(
             visible = controlsVisible && !showCover,
             enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
@@ -351,6 +349,7 @@ fun ReaderScreen(
             }
         }
 
+        // === НИЖНЯЯ ПАНЕЛЬ ===
         AnimatedVisibility(
             visible = controlsVisible && !showCover,
             enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
@@ -387,6 +386,7 @@ fun ReaderScreen(
             }
         }
 
+        // === ЭКРАН ОБЛОЖКИ (ЗАКРЫТАЯ КНИГА) ===
         AnimatedVisibility(
             visible = showCover,
             enter = fadeIn(),
@@ -468,6 +468,7 @@ fun ReaderScreen(
         }
     }
 
+    // === ДИАЛОГ ВЫБОРА ГОЛОСА ===
     if (showVoiceDialog) {
         AlertDialog(
             onDismissRequest = { showVoiceDialog = false },
@@ -514,6 +515,7 @@ fun ReaderScreen(
         )
     }
 
+    // === ШТОРКА ПОИСКА ===
     if (showSearchSheet) {
         var query by remember { mutableStateOf("") }
         val searchResults = remember(query) {
@@ -586,6 +588,7 @@ fun ReaderScreen(
         }
     }
 
+    // === ШТОРКА ОГЛАВЛЕНИЯ ===
     if (showTocSheet) {
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(
@@ -627,6 +630,7 @@ fun ReaderScreen(
         }
     }
 
+    // === ШТОРКА НАСТРОЕК ===
     if (showSettingsSheet) {
         val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(

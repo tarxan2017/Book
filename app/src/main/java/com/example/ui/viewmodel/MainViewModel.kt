@@ -25,6 +25,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
@@ -33,6 +34,7 @@ import kotlinx.coroutines.launch
 import java.io.BufferedInputStream
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 
 const val ADMIN_UID = "AcWTQ3Gf3FYquad3wfSk1CcEvcI3"
@@ -395,12 +397,32 @@ class MainViewModel(
 
     fun setCurrentBook(book: BookEntity) { viewModelScope.launch { repository.setCurrentBook(book) } }
     
+    fun openReader(book: BookEntity) {
+        viewModelScope.launch {
+            repository.setCurrentBook(book)
+            repository.currentBook.first { it?.id == book.id }
+            _currentScreen.value = Screen.Reader
+        }
+    }
+    
     fun openMyBookDetail(book: BookEntity) { _currentScreen.value = Screen.MyBookDetail(book) }
 
-    fun deleteBook(book: BookEntity) {
+    fun deleteBook(context: Context, book: BookEntity) {
         viewModelScope.launch {
+            if (book.coverUri.isNotBlank() && !book.coverUri.startsWith("content://")) {
+                try {
+                    val file = File(book.coverUri)
+                    if (file.exists()) file.delete()
+                } catch (e: Exception) { e.printStackTrace() }
+            }
+            try {
+                val downloadDir = File(context.filesDir, "telegram_downloads")
+                val bookFile = File(downloadDir, "book_${book.id}.pdf")
+                if (bookFile.exists()) bookFile.delete()
+            } catch (e: Exception) { e.printStackTrace() }
+
             repository.deleteBook(book)
-            _userMessage.value = "Книга удалена: ${book.title}"
+            _userMessage.value = "Книга и её файлы удалены: ${book.title}"
         }
     }
 
@@ -527,6 +549,7 @@ class MainViewModel(
         }
     }
 
+    // ИСПРАВЛЕНО: Принудительно ставим isUserWritten = true при обновлении, чтобы превратить мусор в черновик
     fun saveDraft(context: Context, existingBook: BookEntity?, title: String, author: String, textContent: String, coverUri: String) {
         viewModelScope.launch {
             var finalCoverUri = coverUri
@@ -547,7 +570,8 @@ class MainViewModel(
                     title = title.ifBlank { "Без названия" },
                     author = author.ifBlank { "Неизвестный автор" },
                     textContent = textContent,
-                    coverUri = finalCoverUri
+                    coverUri = finalCoverUri,
+                    isUserWritten = true // <--- ПРИНУДИТЕЛЬНО
                 )
                 repository.updateBook(updatedBook)
                 _userMessage.value = "Черновик обновлен!"
@@ -566,6 +590,10 @@ class MainViewModel(
                     isUserWritten = true
                 )
                 repository.addBook(newBook)
+                
+                // Ждем, пока книга появится в общем списке
+                repository.allBooks.first { books -> books.any { it.title == newBook.title } }
+                
                 _userMessage.value = "Черновик сохранен!"
             }
             _currentScreen.value = Screen.MyBook

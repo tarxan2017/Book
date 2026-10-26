@@ -40,6 +40,7 @@ import com.example.data.local.entity.BookEntity
 import com.example.ui.theme.PlayfairDisplayFontFamily
 import com.example.ui.viewmodel.MainViewModel
 import com.example.ui.viewmodel.Screen
+import java.io.File
 
 @Composable
 fun MyBookScreen(
@@ -137,15 +138,13 @@ fun MyBookScreen(
                                 if (book.textContent.isBlank()) {
                                     viewModel.openWriter(book)
                                 } else {
-                                    viewModel.setCurrentBook(book)
-                                    viewModel.navigateTo(Screen.Reader)
+                                    viewModel.openReader(book)
                                 }
                             } else {
                                 viewModel.openMyBookDetail(book)
                             }
                         },
                         onEditClick = {
-                            // ИСПРАВЛЕНО: Теперь карандаш ВСЕГДА открывает диалог редактирования данных
                             editingBook = book
                             editTitle = book.title
                             editAuthor = book.author
@@ -223,7 +222,7 @@ fun MyBookScreen(
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                         Text("Редактировать", style = MaterialTheme.typography.titleLarge.copy(fontFamily = PlayfairDisplayFontFamily, fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
                         IconButton(onClick = {
-                            viewModel.deleteBook(editingBook!!)
+                            viewModel.deleteBook(context, editingBook!!)
                             editingBook = null
                         }) {
                             Icon(Icons.Default.Delete, "Удалить", tint = MaterialTheme.colorScheme.error)
@@ -287,8 +286,15 @@ private fun BookShelfItem(
                 .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.3f), RoundedCornerShape(10.dp))
         ) {
             if (book.coverUri.isNotBlank()) {
+                // ИСПРАВЛЕНО: Надежная загрузка для Coil
+                val imageModel: Any = when {
+                    book.coverUri.startsWith("content://") -> book.coverUri
+                    book.coverUri.startsWith("file://") -> Uri.parse(book.coverUri)
+                    else -> File(book.coverUri)
+                }
+                
                 AsyncImage(
-                    model = book.coverUri,
+                    model = imageModel,
                     contentDescription = book.title,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.fillMaxSize()

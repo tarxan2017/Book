@@ -33,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
@@ -43,6 +44,8 @@ import coil.compose.AsyncImage
 import com.example.ui.theme.PlayfairDisplayFontFamily
 import com.example.ui.viewmodel.MainViewModel
 import com.example.ui.viewmodel.Screen
+import android.net.Uri
+import java.io.File
 
 @Composable
 fun BookListScreen(
@@ -51,6 +54,7 @@ fun BookListScreen(
 ) {
     val allBooks by viewModel.allBooks.collectAsStateWithLifecycle()
     val currentBook by viewModel.currentBook.collectAsStateWithLifecycle()
+    val context = LocalContext.current
 
     Column(
         modifier = modifier
@@ -119,7 +123,9 @@ fun BookListScreen(
                         coverRes = book.coverRes,
                         isCurrent = isCurrent,
                         onSetCurrent = { viewModel.setCurrentBook(book) },
-                        onDelete = { viewModel.deleteBook(book) }
+                        onDelete = { 
+                            viewModel.deleteBook(context, book) 
+                        }
                     )
                 }
             }
@@ -163,8 +169,14 @@ private fun BookItemCard(
                     )
             ) {
                 if (coverUri.isNotBlank()) {
+                    // ИСПРАВЛЕНО: Надежная загрузка для Coil
+                    val imageModel: Any = when {
+                        coverUri.startsWith("content://") -> coverUri
+                        coverUri.startsWith("file://") -> Uri.parse(coverUri)
+                        else -> File(coverUri)
+                    }
                     AsyncImage(
-                        model = coverUri,
+                        model = imageModel,
                         contentDescription = title,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize()
