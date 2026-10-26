@@ -30,8 +30,10 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import java.io.BufferedInputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
-import java.io.FileOutputStream
+import java.util.zip.ZipInputStream
 
 const val ADMIN_UID = "AcWTQ3Gf3FYquad3wfSk1CcEvcI3"
 
@@ -409,7 +411,7 @@ class MainViewModel(
                 try {
                     val inputStream = context.contentResolver.openInputStream(Uri.parse(newCoverUri))
                     val file = File(context.filesDir, "cover_${book.id}_${System.currentTimeMillis()}.jpg")
-                    val outputStream = FileOutputStream(file)
+                    val outputStream = java.io.FileOutputStream(file)
                     inputStream?.copyTo(outputStream)
                     inputStream?.close()
                     outputStream.close()
@@ -502,7 +504,7 @@ class MainViewModel(
                 try {
                     val inputStream = context.contentResolver.openInputStream(Uri.parse(coverUri))
                     val file = File(context.filesDir, "cover_new_${System.currentTimeMillis()}.jpg")
-                    val outputStream = FileOutputStream(file)
+                    val outputStream = java.io.FileOutputStream(file)
                     inputStream?.copyTo(outputStream)
                     inputStream?.close()
                     outputStream.close()
@@ -525,7 +527,6 @@ class MainViewModel(
         }
     }
 
-    // ИСПРАВЛЕНО: Добавлен параметр existingBook для проверки на дубликат
     fun saveDraft(context: Context, existingBook: BookEntity?, title: String, author: String, textContent: String, coverUri: String) {
         viewModelScope.launch {
             var finalCoverUri = coverUri
@@ -533,7 +534,7 @@ class MainViewModel(
                 try {
                     val inputStream = context.contentResolver.openInputStream(Uri.parse(coverUri))
                     val file = File(context.filesDir, "cover_draft_${System.currentTimeMillis()}.jpg")
-                    val outputStream = FileOutputStream(file)
+                    val outputStream = java.io.FileOutputStream(file)
                     inputStream?.copyTo(outputStream)
                     inputStream?.close()
                     outputStream.close()
@@ -542,7 +543,6 @@ class MainViewModel(
             }
 
             if (existingBook != null) {
-                // ОБНОВЛЯЕМ СУЩЕСТВУЮЩУЮ КНИГУ
                 val updatedBook = existingBook.copy(
                     title = title.ifBlank { "Без названия" },
                     author = author.ifBlank { "Неизвестный автор" },
@@ -552,7 +552,6 @@ class MainViewModel(
                 repository.updateBook(updatedBook)
                 _userMessage.value = "Черновик обновлен!"
             } else {
-                // СОЗДАЕМ НОВУЮ КНИГУ
                 val newBook = BookEntity(
                     title = title.ifBlank { "Без названия" },
                     author = author.ifBlank { "Неизвестный автор" },
@@ -570,6 +569,78 @@ class MainViewModel(
                 _userMessage.value = "Черновик сохранен!"
             }
             _currentScreen.value = Screen.MyBook
+        }
+    }
+
+    fun restoreBookFromBackup(context: Context, uri: Uri) {
+        viewModelScope.launch {
+            _isAiThinking.value = true
+            _userMessage.value = "Восстановление книги..."
+            try {
+                context.contentResolver.openInputStream(uri)?.use { inputStream ->
+                    val zipIn = ZipInputStream(BufferedInputStream(inputStream))
+                    var title = ""
+                    var author = ""
+                    var textContent = ""
+                    var finalCoverUri = ""
+
+                    var entry = zipIn.nextEntry
+                    while (entry != null) {
+                        val buffer = ByteArray(8192)
+                        val output = ByteArrayOutputStream()
+                        var len: Int
+                        while (zipIn.read(buffer).also { len = it } > 0) {
+                            output.write(buffer, 0, len)
+                        }
+                        val bytes = output.toByteArray()
+
+                        when (entry.name) {
+                            "info.txt" -> {
+                                val infoText = String(bytes, Charsets.UTF_8)
+                                val lines = infoText.split("\n")
+                                if (lines.isNotEmpty()) title = lines[0].trim()
+                                if (lines.size > 1) author = lines[1].trim()
+                            }
+                            "book.txt" -> {
+                                textContent = String(bytes, Charsets.UTF_8)
+                            }
+                            "cover.jpg" -> {
+                                val file = File(context.filesDir, "cover_restored_${System.currentTimeMillis()}.jpg")
+                                file.writeBytes(bytes)
+                                finalCoverUri = file.absolutePath
+                            }
+                        }
+                        zipIn.closeEntry()
+                        entry = zipIn.nextEntry
+                    }
+                    zipIn.close()
+
+                    if (textContent.isNotBlank()) {
+                        val restoredBook = BookEntity(
+                            title = title.ifBlank { "Восстановленная книга" },
+                            author = author.ifBlank { "Неизвестный автор" },
+                            coverRes = R.drawable.book_cover_alchemist,
+                            totalChapters = 1,
+                            currentChapter = 1,
+                            progressPercent = 0,
+                            generatedQuotesCount = 0,
+                            textContent = textContent,
+                            isCurrent = false,
+                            coverUri = finalCoverUri,
+                            isUserWritten = true
+                        )
+                        repository.addBook(restoredBook)
+                        _userMessage.value = "Книга успешно восстановлена!"
+                        _currentScreen.value = Screen.MyBook
+                    } else {
+                        _userMessage.value = "Файл бэкапа пуст или поврежден."
+                    }
+                }
+            } catch (e: Exception) {
+                _userMessage.value = "Ошибка восстановления: ${e.localizedMessage}"
+            } finally {
+                _isAiThinking.value = false
+            }
         }
     }
 

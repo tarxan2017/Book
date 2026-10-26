@@ -70,8 +70,10 @@ import com.example.ui.theme.PlayfairDisplayFontFamily
 import com.example.ui.viewmodel.MainViewModel
 import com.example.ui.viewmodel.Screen
 import kotlinx.coroutines.launch
-import java.io.BufferedReader
-import java.io.InputStreamReader
+import java.io.BufferedOutputStream
+import java.io.File
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import kotlin.math.absoluteValue
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -92,29 +94,14 @@ fun BookEditorScreen(
 
     var currentStep by remember { mutableIntStateOf(if (draftBook == null) 0 else 1) }
 
-    // Состояния для Экспорта
     var showExportDialog by remember { mutableStateOf(false) }
-    var exportType by remember { mutableStateOf("") } // "TXT", "HTML", "BACKUP"
+    var exportType by remember { mutableStateOf("") } 
 
     val coverPickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri -> if (uri != null) coverUri = uri.toString() }
 
-    // Лаунчер для сохранения файла
-    val createFileLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.CreateDocument("*/*")
-    ) { uri ->
-        if (uri != null) {
-            val textToSave = if (exportType == "TXT" || exportType == "HTML") {
-                // Временно берем текст из состояния страниц (передается ниже)
-                "" 
-            } else ""
-            // Логика записи будет реализована внутри, так как нам нужен доступ к pages
-        }
-    }
-
     if (currentStep == 0) {
-        // ... (Мастер создания книги без изменений) ...
         Box(modifier = modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
             Icon(
                 imageVector = Icons.Default.Create,
@@ -225,9 +212,6 @@ fun BookEditorScreen(
             }
         }
     } else {
-        // ==========================================
-        // ЭКРАН 2: РЕДАКТОР
-        // ==========================================
         var controlsVisible by remember { mutableStateOf(true) }
         var showSettings by remember { mutableStateOf(false) }
         var showPreview by remember { mutableStateOf(false) }
@@ -261,46 +245,75 @@ fun BookEditorScreen(
             else -> MaterialTheme.colorScheme.background to MaterialTheme.colorScheme.onBackground
         }
 
-        // --- ЛОГИКА ЭКСПОРТА И ИМПОРТА ---
         val createFileLauncher = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.CreateDocument("*/*")
         ) { uri ->
             if (uri != null) {
-                val content = when (exportType) {
-                    "TXT" -> pages.joinToString("\n\n---\n\n") { it.text }
-                    "HTML" -> {
-                        val htmlBody = pages.joinToString("") { page ->
-                            page.text.split("\n").joinToString("<br>") { line ->
-                                val centered = line.contains("<center>") && line.contains("</center>")
-                                val cleanLine = line.replace("<center>", "").replace("</center>", "")
-                                    .replace(Regex("""\*\*(.*?)\*\*"""), "<b>$1</b>")
-                                    .replace(Regex("""\*(.*?)\*"""), "<i>$1</i>")
-                                if (centered) "<div style=\"text-align:center;\">$cleanLine</div>" else cleanLine
-                            } + "<hr>"
+                if (exportType == "BACKUP") {
+                    // СОЗДАЕМ ZIP АРХИВ
+                    try {
+                        context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                            val zipOut = ZipOutputStream(BufferedOutputStream(outputStream))
+                            
+                            // 1. Информация (Название и Автор)
+                            zipOut.putNextEntry(ZipEntry("info.txt"))
+                            zipOut.write("$bookTitle\n$bookAuthor".toByteArray(Charsets.UTF_8))
+                            zipOut.closeEntry()
+
+                            // 2. Текст книги
+                            zipOut.putNextEntry(ZipEntry("book.txt"))
+                            zipOut.write(pages.joinToString("\n\n---\n\n") { it.text }.toByteArray(Charsets.UTF_8))
+                            zipOut.closeEntry()
+
+                            // 3. Обложка
+                            if (coverUri.isNotBlank()) {
+                                try {
+                                    zipOut.putNextEntry(ZipEntry("cover.jpg"))
+                                    val inputStream = if (coverUri.startsWith("content://")) {
+                                        context.contentResolver.openInputStream(Uri.parse(coverUri))
+                                    } else {
+                                        File(coverUri).inputStream()
+                                    }
+                                    inputStream?.use { it.copyTo(zipOut) }
+                                    zipOut.closeEntry()
+                                } catch (e: Exception) { e.printStackTrace() }
+                            }
+                            zipOut.finish()
+                            zipOut.close()
                         }
-                        """
-                        <html>
-                        <head><meta charset="utf-8"><title>$bookTitle</title></head>
-                        <body style="font-family: Georgia, serif; font-size: 18px; padding: 20px; color: #333;">
-                        <h1 style="text-align:center;">$bookTitle</h1>
-                        <h3 style="text-align:center; color: #666;">$bookAuthor</h3>
-                        $htmlBody
-                        </body>
-                        </html>
-                        """.trimIndent()
+                    } catch (e: Exception) { e.printStackTrace() }
+                } else {
+                    // TXT и HTML
+                    val content = when (exportType) {
+                        "TXT" -> pages.joinToString("\n\n---\n\n") { it.text }
+                        "HTML" -> {
+                            val htmlBody = pages.joinToString("") { page ->
+                                page.text.split("\n").joinToString("<br>") { line ->
+                                    val centered = line.contains("<center>") && line.contains("</center>")
+                                    val cleanLine = line.replace("<center>", "").replace("</center>", "")
+                                        .replace(Regex("""\*\*(.*?)\*\*"""), "<b>$1</b>")
+                                        .replace(Regex("""\*(.*?)\*"""), "<i>$1</i>")
+                                    if (centered) "<div style=\"text-align:center;\">$cleanLine</div>" else cleanLine
+                                } + "<hr>"
+                            }
+                            """
+                            <html>
+                            <head><meta charset="utf-8"><title>$bookTitle</title></head>
+                            <body style="font-family: Georgia, serif; font-size: 18px; padding: 20px; color: #333;">
+                            <h1 style="text-align:center;">$bookTitle</h1>
+                            <h3 style="text-align:center; color: #666;">$bookAuthor</h3>
+                            $htmlBody
+                            </body>
+                            </html>
+                            """.trimIndent()
+                        }
+                        else -> ""
                     }
-                    "BACKUP" -> {
-                        "===LIVING_PAGE_BACKUP===\n$bookTitle\n$bookAuthor\n${pages.joinToString("\n\n---\n\n") { it.text }}"
-                    }
-                    else -> ""
-                }
-                try {
-                    context.contentResolver.openOutputStream(uri)?.use { outputStream ->
-                        outputStream.write(content.toByteArray())
-                    }
-                    viewModel.navigateTo(Screen.MyBook) // Или просто показать Toast об успехе
-                } catch (e: Exception) {
-                    e.printStackTrace()
+                    try {
+                        context.contentResolver.openOutputStream(uri)?.use { outputStream ->
+                            outputStream.write(content.toByteArray())
+                        }
+                    } catch (e: Exception) { e.printStackTrace() }
                 }
             }
         }
@@ -309,35 +322,10 @@ fun BookEditorScreen(
             contract = ActivityResultContracts.OpenDocument()
         ) { uri ->
             if (uri != null) {
-                try {
-                    context.contentResolver.openInputStream(uri)?.use { inputStream ->
-                        val reader = BufferedReader(InputStreamReader(inputStream))
-                        val fullText = reader.readText()
-                        
-                        if (fullText.startsWith("===LIVING_PAGE_BACKUP===\n")) {
-                            val parts = fullText.removePrefix("===LIVING_PAGE_BACKUP===\n").split("\n", limit = 3)
-                            if (parts.size >= 3) {
-                                bookTitle = parts[0].trim()
-                                bookAuthor = parts[1].trim()
-                                val pagesText = parts[2]
-                                val newPages = pagesText.split("\n\n---\n\n")
-                                pages.clear()
-                                newPages.forEach { pages.add(TextFieldValue(it)) }
-                                showExportDialog = false
-                            }
-                        } else {
-                            // Если это просто TXT файл
-                            pages.clear()
-                            fullText.split("\n\n---\n\n").forEach { pages.add(TextFieldValue(it)) }
-                            showExportDialog = false
-                        }
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
+                showExportDialog = false
+                viewModel.restoreBookFromBackup(context, uri)
             }
         }
-        // ---------------------------------
 
         fun applyFormatting(format: String) {
             val currentVal = pages[pagerState.currentPage]
@@ -414,7 +402,6 @@ fun BookEditorScreen(
                 }
             }
 
-            // ВЕРХНЯЯ ПАНЕЛЬ
             AnimatedVisibility(
                 visible = controlsVisible,
                 enter = slideInVertically(initialOffsetY = { -it }) + fadeIn(),
@@ -456,7 +443,7 @@ fun BookEditorScreen(
                                     enabled = false
                                 )
                                 DropdownMenuItem(
-                                    text = { Text("Экспорт и Бэкап") }, // НОВЫЙ ПУНКТ
+                                    text = { Text("Экспорт и Бэкап") }, 
                                     onClick = { 
                                         showMenu = false
                                         showExportDialog = true 
@@ -477,7 +464,6 @@ fun BookEditorScreen(
                 }
             }
 
-            // НИЖНЯЯ ПАНЕЛЬ (формулировка)
             AnimatedVisibility(
                 visible = controlsVisible,
                 enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
@@ -539,7 +525,6 @@ fun BookEditorScreen(
                 }
             }
 
-            // ДИАЛОГ НАСТРОЕК
             if (showSettings) {
                 AlertDialog(
                     onDismissRequest = { showSettings = false },
@@ -563,14 +548,12 @@ fun BookEditorScreen(
                 )
             }
 
-            // ДИАЛОГ ЭКСПОРТА
             if (showExportDialog) {
                 AlertDialog(
                     onDismissRequest = { showExportDialog = false },
                     title = { Text("Экспорт и восстановление", fontFamily = PlayfairDisplayFontFamily, fontWeight = FontWeight.Bold) },
                     text = {
                         Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            // ЛОКАЛЬНОЕ СОХРАНЕНИЕ
                             Text("Сохранить на устройство", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                             
                             ListItem(
@@ -592,31 +575,29 @@ fun BookEditorScreen(
                                 }
                             )
                             ListItem(
-                                headlineContent = { Text("Создать бэкап (для восстановления)") },
+                                headlineContent = { Text("Создать бэкап (ZIP-архив)") },
                                 leadingContent = { Icon(Icons.Default.Create, contentDescription = null) },
                                 modifier = Modifier.clickable { 
                                     exportType = "BACKUP"
                                     showExportDialog = false 
-                                    createFileLauncher.launch("${bookTitle.ifBlank { "book" }}_backup.lp")
+                                    createFileLauncher.launch("${bookTitle.ifBlank { "book" }}_backup.lpz")
                                 }
                             )
 
                             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
-                            // ЛОКАЛЬНОЕ ВОССТАНОВЛЕНИЕ
                             Text("Восстановить", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
                             ListItem(
                                 headlineContent = { Text("Загрузить из файла") },
                                 leadingContent = { Icon(Icons.Default.Restore, contentDescription = null) },
                                 modifier = Modifier.clickable { 
                                     showExportDialog = false 
-                                    openFileLauncher.launch(arrayOf("text/plain", "application/octet-stream", "*/*"))
+                                    openFileLauncher.launch(arrayOf("text/plain", "application/octet-stream", "application/zip", "*/*"))
                                 }
                             )
 
                             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
-                            // ОБЛАКО (БУДУЩЕЕ)
                             Text("Облако (Скоро)", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             ListItem(
                                 headlineContent = { Text("Загрузить в Google Drive") },
@@ -634,7 +615,6 @@ fun BookEditorScreen(
                 )
             }
 
-            // ДИАЛОГ ПРЕДПРОСМОТРА
             if (showPreview) {
                 Dialog(onDismissRequest = { showPreview = false }) {
                     Surface(

@@ -133,13 +133,10 @@ fun MyBookScreen(
                     BookShelfItem(
                         book = book,
                         onClick = {
-                            // ИЗМЕНЕНО: Проверяем, есть ли текст
                             if (book.isUserWritten) {
                                 if (book.textContent.isBlank()) {
-                                    // Если пусто — сразу в редактор
                                     viewModel.openWriter(book)
                                 } else {
-                                    // Если есть текст — в читалку
                                     viewModel.setCurrentBook(book)
                                     viewModel.navigateTo(Screen.Reader)
                                 }
@@ -148,14 +145,11 @@ fun MyBookScreen(
                             }
                         },
                         onEditClick = {
-                            if (book.isUserWritten) {
-                                viewModel.openWriter(book)
-                            } else {
-                                editingBook = book
-                                editTitle = book.title
-                                editAuthor = book.author
-                                editCoverUri = book.coverUri
-                            }
+                            // ИСПРАВЛЕНО: Теперь карандаш ВСЕГДА открывает диалог редактирования данных
+                            editingBook = book
+                            editTitle = book.title
+                            editAuthor = book.author
+                            editCoverUri = book.coverUri
                         }
                     )
                 }
@@ -305,7 +299,6 @@ private fun BookShelfItem(
                 }
             }
 
-            // БЕЙДЖ В ЛЕВОМ ВЕРХНЕМ УГЛУ
             Surface(
                 color = if (book.isUserWritten) MaterialTheme.colorScheme.primary else Color.Black.copy(alpha = 0.6f),
                 shape = RoundedCornerShape(topStart = 10.dp, bottomEnd = 8.dp),

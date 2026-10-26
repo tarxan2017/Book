@@ -1,6 +1,8 @@
 package com.example.ui.screens
 
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -28,6 +30,7 @@ import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.People
+import androidx.compose.material.icons.filled.Restore
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
@@ -66,6 +69,14 @@ fun SettingsScreen(
     val canManageBooks by viewModel.canManageBooks.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
+
+    val restoreBookLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            viewModel.restoreBookFromBackup(context, uri)
+        }
+    }
 
     val scrollState = rememberScrollState()
 
@@ -292,6 +303,13 @@ fun SettingsScreen(
                     title = "Книга",
                     subtitle = "Управление книгами",
                     onClick = { viewModel.navigateTo(Screen.BookList) }
+                )
+
+                SettingsMenuRow(
+                    icon = Icons.Default.Restore,
+                    title = "Восстановить книгу",
+                    subtitle = "Загрузить из ZIP-архива (.lpz)",
+                    onClick = { restoreBookLauncher.launch(arrayOf("application/zip", "application/octet-stream", "*/*")) }
                 )
 
                 SettingsMenuRow(
