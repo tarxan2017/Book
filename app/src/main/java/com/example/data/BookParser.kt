@@ -27,6 +27,7 @@ class BookParser(private val context: Context) {
             val text = when (format) {
                 "epub", "zip" -> parseZip(uri)
                 "fb2" -> parseFb2(uri)
+                "txt" -> parseTxt(uri) // <--- ДОБАВЛЕНО
                 else -> parsePdf(uri)
             }
             
@@ -62,7 +63,8 @@ class BookParser(private val context: Context) {
         return when {
             name.endsWith(".epub") || name.endsWith(".zip") -> "zip"
             name.endsWith(".fb2") -> "fb2"
-            else -> "pdf"
+            name.endsWith(".txt") -> "txt" // <--- ДОБАВЛЕНО
+            else -> "txt" // <--- ИЗМЕНЕНО С "pdf" НА "txt" (безопасный фолбэк)
         }
     }
 
@@ -79,6 +81,14 @@ class BookParser(private val context: Context) {
             name = uri.lastPathSegment
         }
         return name
+    }
+
+    private fun parseTxt(uri: Uri): String { // <--- НОВЫЙ МЕТОД
+        val inputStream = context.contentResolver.openInputStream(uri) ?: throw Exception("Не удалось открыть файл")
+        return inputStream.use { stream ->
+            val bytes = stream.readBytes()
+            String(bytes, Charsets.UTF_8)
+        }
     }
 
     private fun parsePdf(uri: Uri): String {
@@ -153,7 +163,6 @@ class BookParser(private val context: Context) {
             var entry = zipInputStream.nextEntry
             val textFiles = mutableListOf<Pair<String, String>>()
 
-            // Собираем ВСЕ файлы, которые могут содержать текст
             while (entry != null) {
                 val name = entry.name.lowercase()
                 if (name.endsWith(".html") || name.endsWith(".xhtml") || name.endsWith(".htm") || name.endsWith(".fb2")) {
@@ -168,7 +177,6 @@ class BookParser(private val context: Context) {
                 entry = zipInputStream.nextEntry
             }
 
-            // Сначала обрабатываем FB2 (если он есть внутри)
             val fb2Files = textFiles.filter { it.first.lowercase().endsWith(".fb2") }
             if (fb2Files.isNotEmpty()) {
                 for ((_, fb2Content) in fb2Files) {
@@ -176,21 +184,18 @@ class BookParser(private val context: Context) {
                         textBuilder.append(parseFb2Stream(it)).append("\n\n")
                     }
                 }
-                return@use // Если нашли FB2, на этом заканчиваем
+                return@use
             }
 
-            // Если FB2 нет, значит это EPUB (обрабатываем HTML)
             textFiles.sortBy { it.first }
             for ((_, htmlContent) in textFiles) {
                 var processedHtml = htmlContent
                 
-                // ЖЕСТКАЯ ОЧИСТКА: удаляем head, style и script вместе с их содержимым
                 processedHtml = processedHtml.replace(Regex("""<head[^>]*>.*?</head>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
                 processedHtml = processedHtml.replace(Regex("""<style[^>]*>.*?</style>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
                 processedHtml = processedHtml.replace(Regex("""<script[^>]*>.*?</script>""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)), "")
 
                 val cleanText = Html.fromHtml(processedHtml, Html.FROM_HTML_MODE_LEGACY).toString().trim()
-                // Берем только куски с нормальным текстом (защита от мусора)
                 if (cleanText.length > 100) {
                     textBuilder.append(cleanText).append("\n\n")
                 }

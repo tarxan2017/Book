@@ -144,6 +144,9 @@ class MainViewModel(
     private val _isUpdatingBook = MutableStateFlow(false)
     val isUpdatingBook: StateFlow<Boolean> = _isUpdatingBook.asStateFlow()
 
+    private val _isPublishing = MutableStateFlow(false)
+    val isPublishing: StateFlow<Boolean> = _isPublishing.asStateFlow()
+
     private val _editingBook = MutableStateFlow<PublicBook?>(null)
     val editingBook: StateFlow<PublicBook?> = _editingBook.asStateFlow()
 
@@ -492,7 +495,19 @@ class MainViewModel(
         }
     }
 
-    fun generateNewQuote() {
+    fun publishOrUpdateBook(context: Context, book: BookEntity, category: String, description: String) {
+        viewModelScope.launch {
+            _isPublishing.value = true
+            val result = repository.publishOrUpdateBook(context, book, category, description)
+            result.onSuccess {
+                _userMessage.value = if (book.publicBookId.isBlank()) "Книга успешно опубликована!" else "Книга успешно обновлена!"
+                saveDraft(context, book, book.title, book.author, book.textContent, book.coverUri)
+            }.onFailure { error ->
+                _userMessage.value = "Ошибка публикации: ${error.localizedMessage}"
+            }
+            _isPublishing.value = false
+        }
+    }    fun generateNewQuote() {
         viewModelScope.launch {
             if (!repository.canGenerateVideo()) { _showLimitReachedDialog.value = true; _userMessage.value = "Суточный лимит 5/день исчерпан."; return@launch }
             if (!repository.consumeDailyGeneration()) { _showLimitReachedDialog.value = true; _userMessage.value = "Суточный лимит 5/день исчерпан."; return@launch }
@@ -549,7 +564,6 @@ class MainViewModel(
         }
     }
 
-    // ИСПРАВЛЕНО: Принудительно ставим isUserWritten = true при обновлении, чтобы превратить мусор в черновик
     fun saveDraft(context: Context, existingBook: BookEntity?, title: String, author: String, textContent: String, coverUri: String) {
         viewModelScope.launch {
             var finalCoverUri = coverUri
@@ -571,7 +585,7 @@ class MainViewModel(
                     author = author.ifBlank { "Неизвестный автор" },
                     textContent = textContent,
                     coverUri = finalCoverUri,
-                    isUserWritten = true // <--- ПРИНУДИТЕЛЬНО
+                    isUserWritten = true
                 )
                 repository.updateBook(updatedBook)
                 _userMessage.value = "Черновик обновлен!"
@@ -591,7 +605,6 @@ class MainViewModel(
                 )
                 repository.addBook(newBook)
                 
-                // Ждем, пока книга появится в общем списке
                 repository.allBooks.first { books -> books.any { it.title == newBook.title } }
                 
                 _userMessage.value = "Черновик сохранен!"
@@ -611,6 +624,7 @@ class MainViewModel(
                     var author = ""
                     var textContent = ""
                     var finalCoverUri = ""
+                    var publicBookId = ""
 
                     var entry = zipIn.nextEntry
                     while (entry != null) {
@@ -628,6 +642,7 @@ class MainViewModel(
                                 val lines = infoText.split("\n")
                                 if (lines.isNotEmpty()) title = lines[0].trim()
                                 if (lines.size > 1) author = lines[1].trim()
+                                if (lines.size > 2) publicBookId = lines[2].trim()
                             }
                             "book.txt" -> {
                                 textContent = String(bytes, Charsets.UTF_8)
@@ -655,7 +670,8 @@ class MainViewModel(
                             textContent = textContent,
                             isCurrent = false,
                             coverUri = finalCoverUri,
-                            isUserWritten = true
+                            isUserWritten = true,
+                            publicBookId = publicBookId
                         )
                         repository.addBook(restoredBook)
                         _userMessage.value = "Книга успешно восстановлена!"

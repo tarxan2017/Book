@@ -5,8 +5,11 @@ import android.net.Uri
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.MultipartBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.asRequestBody
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.TimeUnit
@@ -15,6 +18,7 @@ import java.util.concurrent.TimeUnit
  * Сервис для работы с Telegram через Cloudflare Worker.
  * - getFileUrl: получает прямую ссылку на файл (для обложек).
  * - downloadByFileId: скачивает файл через Worker (для PDF).
+ * - uploadFile: загружает файл в Telegram через Worker (для публикации).
  */
 class TelegramBotService(private val context: Context) {
 
@@ -87,6 +91,41 @@ class TelegramBotService(private val context: Context) {
             }
         } catch (e: Exception) {
             Log.e("TelegramBotService", "download error", e)
+            null
+        }
+    }
+
+    /**
+     * Загружает файл в Telegram через Cloudflare Worker.
+     * Возвращает file_id в случае успеха.
+     */
+    suspend fun uploadFile(file: File, fileName: String): String? = withContext(Dispatchers.IO) {
+        val url = "$workerBaseUrl/api/upload"
+
+        try {
+            val fileBody = file.asRequestBody("application/octet-stream".toMediaTypeOrNull())
+            val multipartBody = MultipartBody.Builder()
+                .setType(MultipartBody.FORM)
+                .addFormDataPart("document", fileName, fileBody)
+                .build()
+
+            val request = Request.Builder()
+                .url(url)
+                .post(multipartBody)
+                .build()
+
+            httpClient.newCall(request).execute().use { response ->
+                val body = response.body?.string() ?: ""
+                if (!response.isSuccessful) {
+                    Log.e("TelegramBotService", "upload fail: ${response.code}, $body")
+                    return@withContext null
+                }
+
+                val json = JSONObject(body)
+                if (json.has("file_id")) json.getString("file_id") else null
+            }
+        } catch (e: Exception) {
+            Log.e("TelegramBotService", "upload error", e)
             null
         }
     }

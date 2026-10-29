@@ -49,6 +49,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
@@ -63,6 +64,7 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.example.data.local.entity.BookEntity
 import com.example.data.remote.model.BookCategories
@@ -86,6 +88,19 @@ fun BookEditorScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val focusManager = LocalFocusManager.current
+    val uriHandler = LocalUriHandler.current
+
+    val canManageBooks by viewModel.canManageBooks.collectAsStateWithLifecycle()
+    val isPublishing by viewModel.isPublishing.collectAsStateWithLifecycle()
+
+    val allBooks by viewModel.allBooks.collectAsStateWithLifecycle()
+    val liveBook = allBooks.find { it.id == draftBook?.id }
+    val isPublished = liveBook?.publicBookId?.isNotBlank() == true
+
+    var showPublishDialog by remember { mutableStateOf(false) }
+    var showNotModeratorDialog by remember { mutableStateOf(false) }
+    var publishDescription by remember { mutableStateOf("") }
+    var publishCategory by remember { mutableStateOf("Роман") }
 
     var bookTitle by remember { mutableStateOf(draftBook?.title ?: "") }
     var bookAuthor by remember { mutableStateOf(draftBook?.author ?: "") }
@@ -211,15 +226,12 @@ fun BookEditorScreen(
                 }
             }
         }
-    } else {
-        var controlsVisible by remember { mutableStateOf(true) }
+    } else {        var controlsVisible by remember { mutableStateOf(true) }
         var showSettings by remember { mutableStateOf(false) }
         var showPreview by remember { mutableStateOf(false) }
         var editorTheme by remember { mutableStateOf("dark") }
         var fontSize by remember { mutableFloatStateOf(20f) }
         var showMenu by remember { mutableStateOf(false) }
-
-        val isPublished = false 
 
         val initialPages = remember {
             if (draftBook != null && draftBook.textContent.isNotBlank()) {
@@ -250,22 +262,19 @@ fun BookEditorScreen(
         ) { uri ->
             if (uri != null) {
                 if (exportType == "BACKUP") {
-                    // СОЗДАЕМ ZIP АРХИВ
                     try {
                         context.contentResolver.openOutputStream(uri)?.use { outputStream ->
                             val zipOut = ZipOutputStream(BufferedOutputStream(outputStream))
                             
-                            // 1. Информация (Название и Автор)
                             zipOut.putNextEntry(ZipEntry("info.txt"))
-                            zipOut.write("$bookTitle\n$bookAuthor".toByteArray(Charsets.UTF_8))
+                            val publicId = liveBook?.publicBookId ?: ""
+                            zipOut.write("$bookTitle\n$bookAuthor\n$publicId".toByteArray(Charsets.UTF_8))
                             zipOut.closeEntry()
 
-                            // 2. Текст книги
                             zipOut.putNextEntry(ZipEntry("book.txt"))
                             zipOut.write(pages.joinToString("\n\n---\n\n") { it.text }.toByteArray(Charsets.UTF_8))
                             zipOut.closeEntry()
 
-                            // 3. Обложка
                             if (coverUri.isNotBlank()) {
                                 try {
                                     zipOut.putNextEntry(ZipEntry("cover.jpg"))
@@ -283,7 +292,6 @@ fun BookEditorScreen(
                         }
                     } catch (e: Exception) { e.printStackTrace() }
                 } else {
-                    // TXT и HTML
                     val content = when (exportType) {
                         "TXT" -> pages.joinToString("\n\n---\n\n") { it.text }
                         "HTML" -> {
@@ -438,9 +446,28 @@ fun BookEditorScreen(
                                 onDismissRequest = { showMenu = false }
                             ) {
                                 DropdownMenuItem(
-                                    text = { Text(if (isPublished) "Обновить книгу" else "Опубликовать (Скоро)") },
-                                    onClick = { showMenu = false },
-                                    enabled = false
+                                    text = { 
+                                        Text(
+                                            when {
+                                                isPublished -> "Обновить книгу"
+                                                draftBook != null -> "Опубликовать"
+                                                else -> "Опубликовать (сначала сохраните)"
+                                            }
+                                        ) 
+                                    },
+                                    onClick = { 
+                                        showMenu = false
+                                        if (draftBook == null) {
+                                            val finalText = pages.joinToString("\n\n---\n\n") { it.text }
+                                            viewModel.saveDraft(context, draftBook, bookTitle, bookAuthor, finalText, coverUri)
+                                        } else if (!canManageBooks) {
+                                            showNotModeratorDialog = true
+                                        } else {
+                                            publishCategory = bookCategory
+                                            showPublishDialog = true
+                                        }
+                                    },
+                                    enabled = !isPublishing
                                 )
                                 DropdownMenuItem(
                                     text = { Text("Экспорт и Бэкап") }, 
@@ -523,6 +550,94 @@ fun BookEditorScreen(
                         }
                     }
                 }
+            }
+
+            if (showNotModeratorDialog) {
+                AlertDialog(
+                    onDismissRequest = { showNotModeratorDialog = false },
+                    title = { Text("Требуется статус модератора", fontFamily = PlayfairDisplayFontFamily, fontWeight = FontWeight.Bold) },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Чтобы публиковать книги в общую библиотеку, вам нужно получить статус модератора.")
+                            Spacer(modifier = Modifier.height(8.dp))
+                            Text("1. Перейдите в нашего Telegram-бота и нажмите /start.", fontWeight = FontWeight.Medium)
+                            Text("2. Отправьте боту ваш ID из настроек приложения.", fontWeight = FontWeight.Medium)
+                            Text("3. Напишите администратору, что оставили заявку.", fontWeight = FontWeight.Medium)
+                        }
+                    },
+                    confirmButton = {
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            TextButton(onClick = { uriHandler.openUri("https://t.me/Open_cryptosapp") }) {
+                                Text("Написать админу")
+                            }
+                            Button(
+                                onClick = { uriHandler.openUri("https://t.me/LivingPageLib_9x7q_bot") },
+                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                            ) {
+                                Text("Открыть бота")
+                            }
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showNotModeratorDialog = false }) {
+                            Text("Закрыть")
+                        }
+                    }
+                )
+            }
+
+            if (showPublishDialog) {
+                AlertDialog(
+                    onDismissRequest = { showPublishDialog = false },
+                    title = { Text(if (isPublished) "Обновить книгу" else "Публикация книги", fontFamily = PlayfairDisplayFontFamily, fontWeight = FontWeight.Bold) },
+                    text = {
+                        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            OutlinedTextField(
+                                value = publishDescription,
+                                onValueChange = { publishDescription = it },
+                                label = { Text("Краткое описание") },
+                                modifier = Modifier.fillMaxWidth(),
+                                maxLines = 3,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            
+                            Text("Жанр", fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                BookCategories.ALL.forEach { genre ->
+                                    FilterChip(
+                                        selected = publishCategory == genre,
+                                        onClick = { publishCategory = genre },
+                                        label = { Text(genre, fontSize = 12.sp) }
+                                    )
+                                }
+                            }
+                        }
+                    },
+                    confirmButton = {
+                        Button(
+                            onClick = {
+                                showPublishDialog = false
+                                liveBook?.let { 
+                                    viewModel.publishOrUpdateBook(context, it, publishCategory, publishDescription)
+                                }
+                            },
+                            enabled = publishDescription.isNotBlank() && !isPublishing,
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary)
+                        ) {
+                            if (isPublishing) {
+                                CircularProgressIndicator(modifier = Modifier.size(20.dp), color = Color.White, strokeWidth = 2.dp)
+                            } else {
+                                Text(if (isPublished) "Обновить" else "Опубликовать")
+                            }
+                        }
+                    },
+                    dismissButton = {
+                        TextButton(onClick = { showPublishDialog = false }) { Text("Отмена") }
+                    }
+                )
             }
 
             if (showSettings) {

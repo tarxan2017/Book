@@ -17,5 +17,7 @@ data class BookEntity(
     val isCurrent: Boolean,
     val coverUri: String,
     // НОВЫЙ ФЛАГ: true = написана в редакторе, false = загружена из файла
-    val isUserWritten: Boolean = false 
+    val isUserWritten: Boolean = false,
+    // НОВОЕ ПОЛЕ: ID документа в Firestore. Пусто = черновик, заполнено = опубликовано
+    val publicBookId: String = "" 
 )
