@@ -147,11 +147,11 @@ fun ReaderScreen(
 
     var showCover by remember { mutableStateOf(true) }
 
-    // ИСПРАВЛЕНО: Если книга авторская, режем по разделителю "---", а не по символам
+    // ИСПРАВЛЕНО: Если текст содержит разделители "---", режем по ним, даже если это не черновик
     val pages = remember(book.textContent, fontSize) {
         if (book.textContent.isBlank()) {
             listOf("Книга пуста")
-        } else if (book.isUserWritten) {
+        } else if (book.isUserWritten || book.textContent.contains("\n\n---\n\n")) {
             book.textContent.split("\n\n---\n\n").map { it.trim() }.filter { it.isNotBlank() }
         } else {
             chunkText(book.textContent, chunkSize = (1200 * (17f / fontSize)).toInt())
@@ -179,7 +179,6 @@ fun ReaderScreen(
         }
     }
 
-    // ИСПРАВЛЕНО: Сохраняем прогресс ТОЛЬКО если книга реально выбрана, а не является заглушкой
     LaunchedEffect(pagerState.currentPage) {
         if (currentBook != null) {
             val progress = ((pagerState.currentPage + 1).toFloat() / pages.size * 100).toInt()
