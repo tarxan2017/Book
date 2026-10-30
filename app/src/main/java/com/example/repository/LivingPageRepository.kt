@@ -37,6 +37,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.Date
+import java.util.concurrent.TimeUnit
 
 class LivingPageRepository(
     private val dao: LivingPageDao,
@@ -49,7 +50,10 @@ class LivingPageRepository(
     private val telegramBotService: TelegramBotService
 ) {
 
-    private val okHttpClient = OkHttpClient()
+    private val okHttpClient = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .build()
 
     val currentUser: StateFlow<FirebaseUser?> = authManager.currentUser
 
@@ -226,7 +230,6 @@ class LivingPageRepository(
         dao.clearCurrentBook()
 
         if (existingBook != null) {
-            // ОБНОВЛЯЕМ СУЩЕСТВУЮЩУЮ. isUserWritten остается false (это не наш черновик).
             val updatedBook = existingBook.copy(
                 textContent = textContent,
                 coverUri = coverUri?.toString() ?: existingBook.coverUri,
@@ -237,7 +240,6 @@ class LivingPageRepository(
             dao.updateBook(updatedBook)
             dao.setCurrentBookById(updatedBook.id.toLong())
         } else {
-            // СОЗДАЕМ НОВУЮ. isUserWritten = false.
             val localBook = BookEntity(
                 title = book.title.ifBlank { "Без названия" },
                 author = book.author.ifBlank { "Неизвестный автор" },
@@ -326,6 +328,45 @@ class LivingPageRepository(
             Result.success(Unit)
         } catch (e: Exception) {
             Log.e("Publish", "Ошибка публикации", e)
+            Result.failure(e)
+        }
+    }
+
+    // ==========================================
+    // НОВЫЙ МЕТОД: Запрос к AI-советнику
+    // ==========================================
+    suspend fun getAiAdvice(prompt: String, context: String): Result<String> = withContext(Dispatchers.IO) {
+        try {
+            val json = JSONObject().apply {
+                put("prompt", prompt)
+                put("context", context)
+            }
+            val body = json.toString().toRequestBody("application/json".toMediaType())
+            
+            val request = Request.Builder()
+                .url("https://livingpage-ai.taxo2015.workers.dev")
+                .post(body)
+                .build()
+
+            val response = okHttpClient.newCall(request).execute()
+            val responseBody = response.body?.string() ?: ""
+
+            if (!response.isSuccessful) {
+                val errorObj = try { JSONObject(responseBody) } catch (e: Exception) { null }
+                val errorMsg = errorObj?.optString("error") ?: "Ошибка сервера: ${response.code}"
+                return@withContext Result.failure(Exception(errorMsg))
+            }
+
+            val jsonResponse = JSONObject(responseBody)
+            val resultText = jsonResponse.optString("result")
+            
+            if (resultText.isBlank()) {
+                Result.failure(Exception("AI вернул пустой ответ"))
+            } else {
+                Result.success(resultText)
+            }
+        } catch (e: Exception) {
+            Log.e("AI_Error", "Ошибка запроса к AI", e)
             Result.failure(e)
         }
     }

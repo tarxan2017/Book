@@ -24,6 +24,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.AddPhotoAlternate
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudUpload
 import androidx.compose.material.icons.filled.Create
@@ -226,12 +227,14 @@ fun BookEditorScreen(
                 }
             }
         }
-    } else {        var controlsVisible by remember { mutableStateOf(true) }
+    } else {
+        var controlsVisible by remember { mutableStateOf(true) }
         var showSettings by remember { mutableStateOf(false) }
         var showPreview by remember { mutableStateOf(false) }
         var editorTheme by remember { mutableStateOf("dark") }
         var fontSize by remember { mutableFloatStateOf(20f) }
         var showMenu by remember { mutableStateOf(false) }
+        var showAiSheet by remember { mutableStateOf(false) }
 
         val initialPages = remember {
             if (draftBook != null && draftBook.textContent.isNotBlank()) {
@@ -373,8 +376,7 @@ fun BookEditorScreen(
                     focusManager.clearFocus()
                     controlsVisible = !controlsVisible
                 }
-        ) {
-            HorizontalPager(
+        ) {            HorizontalPager(
                 state = pagerState,
                 modifier = Modifier.fillMaxSize(),
                 pageSpacing = 16.dp
@@ -519,11 +521,19 @@ fun BookEditorScreen(
                             IconButton(onClick = { applyFormatting("center") }) {
                                 Icon(Icons.Default.FormatAlignCenter, "По центру", tint = MaterialTheme.colorScheme.onSurface)
                             }
+                            
+                            IconButton(onClick = { 
+                                focusManager.clearFocus()
+                                showAiSheet = true 
+                            }) {
+                                Icon(Icons.Default.AutoAwesome, "AI Советник", tint = MaterialTheme.colorScheme.primary)
+                            }
+
                             IconButton(onClick = { 
                                 focusManager.clearFocus()
                                 showPreview = true 
                             }) {
-                                Icon(Icons.Default.Visibility, "Предпросмотр", tint = MaterialTheme.colorScheme.primary)
+                                Icon(Icons.Default.Visibility, "Предпросмотр", tint = MaterialTheme.colorScheme.onSurface)
                             }
                         }
                         
@@ -550,6 +560,21 @@ fun BookEditorScreen(
                         }
                     }
                 }
+            }
+
+            if (showAiSheet) {
+                val currentText = pages.getOrNull(pagerState.currentPage)?.text ?: ""
+                val prevText = if (pagerState.currentPage > 0) pages.getOrNull(pagerState.currentPage - 1)?.text ?: "" else ""
+                
+                AiAssistantSheet(
+                    viewModel = viewModel,
+                    currentPageText = currentText,
+                    previousPageText = prevText,
+                    onDismiss = { 
+                        showAiSheet = false 
+                        // Убрали viewModel.clearAiResponse(), чтобы сохранять историю
+                    }
+                )
             }
 
             if (showNotModeratorDialog) {

@@ -177,6 +177,13 @@ class MainViewModel(
     private val _isCommentSending = MutableStateFlow(false)
     val isCommentSending: StateFlow<Boolean> = _isCommentSending.asStateFlow()
 
+    // === AI СОСТОЯНИЯ ===
+    private val _isAiGenerating = MutableStateFlow(false)
+    val isAiGenerating: StateFlow<Boolean> = _isAiGenerating.asStateFlow()
+
+    private val _aiResponse = MutableStateFlow<String?>(null)
+    val aiResponse: StateFlow<String?> = _aiResponse.asStateFlow()
+
     init {
         viewModelScope.launch {
             publicBooks.collect { books ->
@@ -211,6 +218,23 @@ class MainViewModel(
                 }
             }
         }
+    }    // === AI МЕТОДЫ ===
+    fun askAi(prompt: String, context: String) {
+        viewModelScope.launch {
+            _isAiGenerating.value = true
+            _aiResponse.value = null
+            val result = repository.getAiAdvice(prompt, context)
+            result.onSuccess { response ->
+                _aiResponse.value = response
+            }.onFailure { error ->
+                _userMessage.value = "Ошибка AI: ${error.localizedMessage}"
+            }
+            _isAiGenerating.value = false
+        }
+    }
+
+    fun clearAiResponse() {
+        _aiResponse.value = null
     }
 
     fun fetchComments(bookId: String) {
@@ -453,9 +477,7 @@ class MainViewModel(
         }
     }
 
-    fun saveReadingProgress(book: BookEntity, percent: Int) { viewModelScope.launch { repository.updateBook(book.copy(progressPercent = percent)) } }
-
-    fun openAdminPanel() { _currentScreen.value = Screen.AdminPanel }
+    fun saveReadingProgress(book: BookEntity, percent: Int) { viewModelScope.launch { repository.updateBook(book.copy(progressPercent = percent)) } }    fun openAdminPanel() { _currentScreen.value = Screen.AdminPanel }
     fun openAdminLibrary() { _currentScreen.value = Screen.AdminLibrary }
     fun openAdminModerators() { _currentScreen.value = Screen.AdminModerators }
     fun openAdminStats() { _currentScreen.value = Screen.AdminStats }
@@ -507,7 +529,9 @@ class MainViewModel(
             }
             _isPublishing.value = false
         }
-    }    fun generateNewQuote() {
+    }
+
+    fun generateNewQuote() {
         viewModelScope.launch {
             if (!repository.canGenerateVideo()) { _showLimitReachedDialog.value = true; _userMessage.value = "Суточный лимит 5/день исчерпан."; return@launch }
             if (!repository.consumeDailyGeneration()) { _showLimitReachedDialog.value = true; _userMessage.value = "Суточный лимит 5/день исчерпан."; return@launch }
